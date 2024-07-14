@@ -30,3 +30,18 @@
 *.exe
 *.out
 *.app
+
+# Folders
+build/
+build/*
+debug/
+debug/*
+.cache/
+.cache/*
+
+# CMAKE files
+CMakeLists.txt
+
+# debug files
+.nvim*
+log*

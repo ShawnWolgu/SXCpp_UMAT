@@ -2,6 +2,7 @@
 #include <iostream>
 #include <math.h>
 #include <stdlib.h>
+#include "func.h"
 
 using namespace std;
 void CalcElaStiffMat(Eigen::Ref<Eigen::Matrix<double, 6, 6>> C,

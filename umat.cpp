@@ -3,11 +3,14 @@
 #include <fstream>
 #include <math.h>
 #include <stdlib.h>
-#include "func.h"
-#include "global.h"
+#include "include/func.h"
+#include "include/global.h"
 
 using namespace std;
 using namespace Eigen;
+
+//global variables
+Matrix<double, 6, 6> elastic_modulus_ref;
 
 extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse, double* spd,
 	double* scd, double* rpl, double* ddsddt, double* drplde, double* drpldt,

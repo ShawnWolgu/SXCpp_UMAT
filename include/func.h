@@ -41,6 +41,7 @@ inline Matrix<double, 6, 6> read_elastic(ifstream &is){
     for(;row_num !=6; ++row_num){
         temp_idx = 0;
         getline(is, temp_str);
+        cout << temp_str << endl;
         stringstream stream(temp_str);
         while(!stream.eof() && temp_idx!=6) stream >> temp[temp_idx++];
         modulus.row(row_num) << temp[0], temp[1], temp[2], temp[3], temp[4], temp[5];

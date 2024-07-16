@@ -3,6 +3,7 @@
 #include <Eigen/Eigen>
 #include <iostream>
 #include <fstream>
+#include <cstring>
 
 using namespace Eigen;
 using namespace std;
@@ -128,5 +129,22 @@ inline Matrix6d cal_rotation_trans_6d_for_stiff(Matrix3d M){
     M66(5,5) = xx*yy+xy*yx;
 
 	return M66;
+}
+
+inline void processPath(char* path, const char* terminationSequence) {
+    const size_t terminationLength = strlen(terminationSequence);
+
+    // Find the length of the valid path part (non-empty part)
+    size_t len = 0;
+    while (len < 200 && path[len] != '\0' && path[len] != ' ') {
+        ++len;
+    }
+
+    // Add the termination sequence after the valid path
+    if (len + terminationLength < 200) { // Ensure there's enough space for the sequence and null terminator
+        strcpy(path + len, terminationSequence);
+    } else {
+        std::cerr << "Error: Not enough space to add termination sequence." << std::endl;
+    }
 }
 

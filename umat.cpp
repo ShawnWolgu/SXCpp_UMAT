@@ -27,8 +27,8 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
         char temp[200];
         int lenoutdir;
         getoutdir(temp, &lenoutdir, 200);
-        cout << temp << endl;
-        ifstream cij("param.txt");
+        processPath(temp, "\\param.txt");
+        ifstream cij(temp);
         elastic_modulus_ref = read_elastic(cij);
         statev[0] = 10;
         statev[1] = 10;

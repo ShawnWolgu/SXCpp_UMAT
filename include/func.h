@@ -133,11 +133,13 @@ inline Matrix6d cal_rotation_trans_6d_for_stiff(Matrix3d M){
 
 inline void processPath(char* path, const char* terminationSequence) {
     const size_t terminationLength = strlen(terminationSequence);
-
+    const size_t maxPathLength = 200;
     // Find the length of the valid path part (non-empty part)
     size_t len = 0;
-    while (len < 200 && path[len] != '\0' && path[len] != ' ') {
-        ++len;
+    for (size_t i = 0; i < maxPathLength && path[i] != '\0'; ++i) {
+        if (path[i] != ' ') {
+            len = i + 1;
+        }
     }
 
     // Add the termination sequence after the valid path

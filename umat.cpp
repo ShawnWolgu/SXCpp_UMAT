@@ -82,7 +82,12 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     Matrix3d plastic_strain = tensor_trans_order(Vector6d{{statev[6], statev[7], statev[8], statev[9], statev[10], statev[11]}});
     double equiv_plas_strain = statev[12];
     statev[13] = 0.0;//dtemp
-
+    //
+    if (dstrain_.norm() < 1e-20){
+        Matrix6d C_ijkl = change_basis_order(elastic_modulus);
+        ddsdde_from_matrix(C_ijkl, ddsdde);
+        return;
+    }
     // dotSigma - WeSigma + SigmaWe + sigma*trace(De) = C De
     // dotSigma - (W-Wp)Sigma + Sigma(W-Wp) + sigma*trace(D-Dp) = C (D-Dp)
     // dotSigma - sigma*trace(Dp) + C Dp = We Sigma - Sigma We - sigma*trace(D) + C D
@@ -125,7 +130,7 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
         /* cout << "--" << stress_incr_rate.transpose() << "," << F_obj.norm() << "," << step_scale << endl; */
         F_norm = F_obj.norm();
     }
-    /* cout << stress_incr_rate.transpose() << endl; */
+    cout << stress_incr_rate.transpose() << endl;
     if (F_obj.norm() > 1e-3) {
         throw runtime_error("SXCpp UMAT Error: The stress increment calculation did not converge.");
     }

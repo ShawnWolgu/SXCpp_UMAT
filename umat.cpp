@@ -24,6 +24,7 @@ Matrix6d strain_modi_tensor{
     {0, 0, 0, 0, 0, 2},
 };
 LatentMat lat_hard_mat = LatentMat::Identity();
+LatentMat interaction_mat = LatentMat::Identity();
 unique_ptr<PMode> mode_sys[MAX_MODE_NUM];
 
 extern "C" void getoutdir(char* outdir, int* lenoutdir, int len);
@@ -46,9 +47,9 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
         /* processPath(temp, "\\param.txt"); */
         /* ifstream cij(temp); */
         ifstream cij("param.txt");
-        statev[0] = 20;
-        statev[1] = 20;
-        statev[2] = 20;
+        statev[0] = 0;
+        statev[1] = 0;
+        statev[2] = 0;
         statev[3] = statev[0]; statev[4] = statev[1]; statev[5] = statev[2]; // save the initial euler angle.
         if (total_mode_num == 0){
             elastic_modulus_ref = read_elastic(cij);
@@ -56,6 +57,12 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
             read_pmodes(cij);
             for (int pmode_id = 0; pmode_id < total_mode_num; pmode_id++){
                 mode_sys[pmode_id]->cal_shear_modulus(elastic_modulus_ref);
+                mode_sys[pmode_id]->initial_statev(statev);
+            }
+            initialization_interaction();
+        }
+        else {
+            for (int pmode_id = 0; pmode_id < total_mode_num; pmode_id++){
                 mode_sys[pmode_id]->initial_statev(statev);
             }
         }
@@ -99,9 +106,9 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     double F_norm = 1000.0;
     for (int n_iter = 0; n_iter < 200; n_iter++){
         stress_in_iter = stress_3d + tensor_trans_order(stress_incr_rate) * *dtime;
-        vel_grad_plas = get_vel_grad_plas(stress_in_iter, orientation, statev, *dtime, *temp);
+        vel_grad_plas = get_vel_grad_plas(stress_in_iter, orientation, statev, *temp);
         strain_rate_plas = 0.5 * (vel_grad_plas + vel_grad_plas.transpose());
-        ddp_by_dsigma = get_dp_grad(stress_in_iter, orientation, statev, *dtime, *temp);
+        ddp_by_dsigma = get_dp_grad(stress_in_iter, orientation, statev, *temp);
         dp_term = Cij_pri * strain_modi_tensor * tensor_trans_order(strain_rate_plas);
         F_obj = stress_incr_rate + dp_term - unchanged_term;
         dF_obj = Matrix6d::Identity() + Cij_pri * strain_modi_tensor * ddp_by_dsigma;
@@ -130,15 +137,16 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     orientation = orientation * Rodrigues(spin_elas).transpose(); 
     Vector3d new_euler = Euler_trans(orientation);
     statev[0] = new_euler(0); statev[1] = new_euler(1); statev[2] = new_euler(2);
-    /* for (auto &mode_component : mode_sys) mode_component->update_ssd(strain_rate_tensor,orientation);  */
-    /* for (auto &mode_component : mode_sys) mode_component->update_rho_hard(mode_sys); */
+    Matrix3d stress_grain = tensor_rot_to_CryCoord(stress_in_iter, orientation);
     for (int pmode_id = 0; pmode_id < total_mode_num; pmode_id++){
-        statev[sdv_ind(pmode_id,"ACC")] += statev[sdv_ind(pmode_id,"SSR")] * *dtime;
+        mode_sys[pmode_id]->update_ssd(strain_rate, stress_grain, statev, *dtime, *temp);
     }
+    /* for (int pmode_id = 0; pmode_id < total_mode_num; pmode_id++){ */
+    /*     mode_sys[pmode_id]->update_rho_hard(statev, *dtime, *temp); */
+    /* } */
     for (int pmode_id = 0; pmode_id < total_mode_num; pmode_id++){
         mode_sys[pmode_id]->update_status(orientation, elastic_strain, *dtime, *temp, statev);
     }
-    for (auto &mode_component : mode_sys)
     stress_ = tensor_trans_order(stress_in_iter);
     Vector6d sigma_out = change_basis_order(stress_);
     for (int i = 0; i < 6; i++){
@@ -191,7 +199,7 @@ int main(){
 
         for (int n_iter = 0; n_iter < 20; n_iter++){
             // Call the umat function
-            for (int i = 0; i < 13; i++){
+            for (int i = 0; i < 100; i++){
                 statev[i] = statev_backup[i];
             }
             for (int i = 0; i < 6; i++){
@@ -214,7 +222,7 @@ int main(){
                 dstran[i+1] -= 1* dX(i);
             }
         }
-        for (int i = 0; i < 13; i++){
+        for (int i = 0; i < 100; i++){
             statev_backup[i] = statev[i];
         }
         for (int i = 0; i < 6; i++){
@@ -227,9 +235,9 @@ int main(){
         std::cout << stran[0] << "," << stran[1] << "," << stran[2] << "," << stran[3] << "," << stran[4] << "," << stran[5] << ",";
         std::cout << stress[0] << "," << stress[1] << "," << stress[2] << "," << stress[3] << "," << stress[4] << "," << stress[5] << ",";
         std::cout << statev[0] << "," << statev[1] << "," << statev[2] << "," ;
-        std::cout << statev[sdv_ind(0,"ACC")] << "," << statev[sdv_ind(1,"ACC")] << "," << statev[sdv_ind(2,"ACC")] << "," << statev[sdv_ind(3,"ACC")] << ",";
-        std::cout << statev[sdv_ind(4,"ACC")] << "," << statev[sdv_ind(5,"ACC")] << "," << statev[sdv_ind(6,"ACC")] << "," << statev[sdv_ind(7,"ACC")] << ",";
-        std::cout << statev[sdv_ind(8,"ACC")] << "," << statev[sdv_ind(9,"ACC")] << "," << statev[sdv_ind(10,"ACC")] << "," << statev[sdv_ind(11,"ACC")] << endl;
+        std::cout << statev[sdv_ind(0,"DD")] << "," << statev[sdv_ind(1,"DD")] << "," << statev[sdv_ind(2,"DD")] << "," << statev[sdv_ind(3,"DD")] << ",";
+        std::cout << statev[sdv_ind(4,"DD")] << "," << statev[sdv_ind(5,"DD")] << "," << statev[sdv_ind(6,"DD")] << "," << statev[sdv_ind(7,"DD")] << ",";
+        std::cout << statev[sdv_ind(8,"DD")] << "," << statev[sdv_ind(9,"DD")] << "," << statev[sdv_ind(10,"DD")] << "," << statev[sdv_ind(11,"DD")] << endl;
     }
     return 0;
 }

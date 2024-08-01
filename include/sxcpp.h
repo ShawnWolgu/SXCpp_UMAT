@@ -35,4 +35,5 @@ extern Matrix3d lattice_vec;
 extern Matrix6d elastic_modulus_ref;
 extern Matrix6d strain_modi_tensor;
 extern LatentMat lat_hard_mat;
+extern LatentMat interaction_mat;
 extern unique_ptr<PMode> mode_sys[];

@@ -4,6 +4,7 @@
 
 Matrix6d cal_rotation_trans_6d_for_stiff(Matrix3d M);
 Matrix6d cal_rotation_trans_6d_for_compl(Matrix3d M);
+int get_interaction_mode(Vector3d burgers_i, Vector3d plane_i, Vector3d burgers_j, Vector3d plane_j);
 
 inline Matrix6d Jacobian_Matrix(double* ddsdde){
     Matrix6d C;
@@ -371,6 +372,32 @@ inline Vector3d get_plane_norm(Vector3d &plane_norm_disp, Matrix3d &lattice_vec)
     Vector3d vec_two = ((l_vec - k_vec).transpose() * lattice_vec);
     Vector3d norm = vec_one.cross(vec_two);
     return norm / norm.norm();
+}
+
+inline double cal_cosine(Vector3d vec_i, Vector3d vec_j){
+    return vec_i.dot(vec_j)/(vec_i.norm() * vec_j.norm());
+}
+
+/*
+ * Return the dislocation interaction mode code between two slip system.
+ * 0: No Junction, 1: Hirth Lock, 2: Coplanar Junction, 3: Glissile Junction, 4: Sessile Junction
+ */
+inline int get_interaction_mode(Vector3d burgers_i, Vector3d plane_i, Vector3d burgers_j, Vector3d plane_j){
+    double perp = 0.02, prll = 0.98;
+    double cos_b_angle = cal_cosine(burgers_i, burgers_j);
+    if(abs(cos_b_angle) < perp) return 1;
+    else {
+        if(abs(cos_b_angle) > prll) return 0;
+        else{
+            if (abs(cal_cosine(plane_i, plane_j)) > prll) return 2;
+            else{
+                bool if_glide_i = (abs(cal_cosine(plane_i, burgers_i+burgers_j)) < perp);
+                bool if_glide_j = (abs(cal_cosine(plane_j, burgers_i+burgers_j)) < perp);
+                if (if_glide_i || if_glide_j) return 3;
+                else return 4;
+            }
+        }
+    }
 }
 
 inline int sdv_ind(int slip_num, string sdv_name){

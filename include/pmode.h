@@ -39,23 +39,25 @@ public:
     virtual double cal_ddgamma_dtau(Matrix3d stress_tensor, double temperature, double* statev) {return 0.0;};
     virtual void update_status(Matrix3d orientation, Matrix3d strain_elas, double dtime, double temperature, double *statev) {};
     virtual void initial_statev(double *statev) {};
+    virtual void update_ssd(Matrix3d strain_rate, Matrix3d stress_grain, double *statev, double dtime, double temperature) {};
+    virtual void update_rho_hard(double *statev, double dtime, double temperature) {};
     /* virtual void update_ssd(Matrix3d dstrain, Matrix3d orientation) {}; */
-    Matrix3d dL_tensor(double shear_rate, double dtime);
-    Matrix6d ddp_dsigma(double ddgamma_dtau, double dtime);
-    Matrix6d dwp_dsigma(double ddgamma_dtau, double dtime);
+    Matrix3d dL_tensor(double shear_rate);
+    Matrix6d ddp_dsigma(double ddgamma_dtau);
+    Matrix6d dwp_dsigma(double ddgamma_dtau);
 };
 
 inline PMode::PMode() = default;
 
-inline Matrix3d PMode::dL_tensor(double shear_rate, double dtime) {return schmidt * shear_rate;}
+inline Matrix3d PMode::dL_tensor(double shear_rate) {return schmidt * shear_rate;}
 
-inline Matrix6d PMode::ddp_dsigma(double ddgamma_dtau, double dtime) {
+inline Matrix6d PMode::ddp_dsigma(double ddgamma_dtau) {
     Vector6d symSchmidt_6d = strain_modi_tensor * tensor_trans_order((Matrix3d)(0.5*(schmidt+schmidt.transpose())));
     Matrix6d symSchmidt_66 = symSchmidt_6d * symSchmidt_6d.transpose();
     return symSchmidt_66 * ddgamma_dtau;
 }
 
-inline Matrix6d PMode::dwp_dsigma(double ddgamma_dtau, double dtime) {
+inline Matrix6d PMode::dwp_dsigma(double ddgamma_dtau) {
     Vector6d symSchmidt_6d = strain_modi_tensor * tensor_trans_order((Matrix3d)(0.5*(schmidt+schmidt.transpose())));
     Vector6d asymSchmidt_6d = strain_modi_tensor * tensor_trans_order((Matrix3d)(0.5*(schmidt-schmidt.transpose())));
     Matrix6d symSchmidt_66 = asymSchmidt_6d * symSchmidt_6d.transpose();

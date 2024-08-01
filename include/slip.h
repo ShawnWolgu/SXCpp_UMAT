@@ -25,6 +25,8 @@ public:
     double cal_ddgamma_dtau(Matrix3d stress_tensor, double temperature, double* statev) override;
     void update_status(Matrix3d orientation, Matrix3d strain_elas, double dtime, double temperature, double* statev) override;
     void initial_statev(double* statev) override;
+    void update_ssd(Matrix3d strain_rate, Matrix3d stress_grain, double *statev, double dtime, double temperature) override;
+    void update_rho_hard(double *statev, double dtime, double temperature) override;
     /* void update_ssd(Matrix3d dstrain, Matrix3d orientation) override; */
     virtual ~Slip() = default;
 
@@ -60,7 +62,7 @@ inline Slip::Slip(int slip_num, Vector6d &slip_info, HardenVec &hardens,
     burgers_vec = (burgers_vec.transpose() * lattice_vec).transpose();
     plane_norm = get_plane_norm(plane_norm_disp, lattice_vec);
     schmidt = burgers_vec / burgers_vec.norm() * plane_norm.transpose();
-    if (flag_harden == 1) rho_init = harden_params[1] * f_active;
+    if (flag_harden == 1) rho_init = harden_params[0] * f_active;
     shear_modulus = 0;
     cout << "Slip system " << num << " is initialized." << endl;
     cout << "Burgers vector of slip system " << num << " is "
@@ -173,20 +175,15 @@ inline void Slip::update_voce(unique_ptr<PMode> mode_sys[], LatentMat &lat_hard_
 inline void Slip::update_disvel(unique_ptr<PMode> mode_sys[], LatentMat &lat_hard_mat, double bv,
                        double dtime, double temperature, double* statev) {
     /*
-   * [velocity parameters]
-   *  1. MFP control coeffient, 2. reference frequency, 3. activation energy, 4.
-   * slip resistance, 5. energy exponent
-   *  6. saturated speed, 7. drag coefficient
-   * [hardening parameters]
-   *  8. forest hardening coefficient
-   * [DD evolution parameters]
-   *  0. SSD_density, 9. nucleation coefficient, 10. nucleation threshold
-   * stress, 11. multiplication coefficient
-   *  12. drag stress D, 13. reference strain rate, 14. c/g
-   *
-   * update parameters:
-   * 0: burgers, 1: mean_free_path, 2: disl_density_resist, 3: forest_stress
-   */
+     * [velocity parameters] 
+     *  1. MFP control coeffient, 2. reference frequency, 3. activation energy, 4. slip resistance, 5. energy exponent
+     *  6. saturated speed, 7. drag coefficient
+     * [hardening parameters] 
+     *  8. forest hardening coefficient
+     * [DD evolution parameters] 
+     *  0. SSD_density, 9. nucleation coefficient, 10. multiplication coefficient, 11. drag stress D, 12. reference strain rate, 13. c/g 
+     * [Twin parameters] 
+     * 0. tau_0, 1. tau_1, 2. h_0, 3. h_1, 4. twin_strain, 5. SRS, 6. low_threshold, 7. high_threshold*/
     double burgers = bv * 1e-10, joint_factor = 0.0;
     double c_mfp = harden_params[1], c_forest = harden_params[8], HP_stress = 0;
     double disl_density, disl_density_for, disl_density_resist, joint_density, forest_stress, mean_free_path;
@@ -202,7 +199,7 @@ inline void Slip::update_disvel(unique_ptr<PMode> mode_sys[], LatentMat &lat_har
     double crss_factor = joint_factor * joint_density + disl_density_resist;
     forest_stress = c_forest * shear_modulus * burgers * sqrt(crss_factor) + HP_stress;
     mean_free_path = c_mfp / sqrt(disl_density_for);
-    statev[sdv_ind(num,"mfp")] = mean_free_path, statev[sdv_ind(num,"tauf")] = forest_stress;
+    statev[sdv_ind(num,"mfp")] = mean_free_path; statev[sdv_ind(num,"tauf")] = forest_stress;
 }
 
 inline double Slip::cal_ddgamma_dtau(Matrix3d stress_tensor, double temperature, double* statev) {
@@ -269,7 +266,7 @@ inline void Slip::initial_statev(double* statev){
         statev[sdv_ind(num, "SR")] = 0.0;
         statev[sdv_ind(num, "slope")] = 0.0;
         statev[sdv_ind(num, "DD")] = rho_init;
-        statev[sdv_ind(num, "tauf")] = 0.0;
+        statev[sdv_ind(num, "tauf")] = harden_params[8] * shear_modulus * burgers_vec.norm() * 1e-10 * sqrt(rho_init*total_mode_num);
         statev[sdv_ind(num, "mfp")] = harden_params[1]/sqrt(rho_init*total_mode_num)*total_mode_num;
     }
     else {
@@ -414,6 +411,7 @@ inline double waiting_time_grad(double stress_eff,
 inline double running_time(double stress_eff, double c_drag, double speed_sat,
                            double mean_free_path, double burgers,
                            double temperature) {
+    if (stress_eff <= 1e-4) return 1e-40;
     stress_eff = stress_eff * MPa_to_Pa;
     double coeff_B =
         (c_drag * k_boltzmann * temperature) / (speed_sat * pow(burgers, 2));
@@ -441,3 +439,78 @@ inline double running_time_grad(double stress_eff, double c_drag,
     return gradient * MPa_to_Pa;
 }
 
+inline void Slip::update_ssd(Matrix3d strain_rate, Matrix3d stress, double *statev, double dtime, double temperature){
+    /*
+     * [velocity parameters] 
+     *  1. MFP control coeffient, 2. reference frequency, 3. activation energy, 4. slip resistance, 5. energy exponent
+     *  6. saturated speed, 7. drag coefficient
+     * [hardening parameters] 
+     *  8. forest hardening coefficient
+     * [DD evolution parameters] 
+     *  0. SSD_density, 9. nucleation coefficient, 10. nucleation threshold stress, 11. multiplication coefficient
+     *  12. drag stress D, 13. reference strain rate, 14. c/g 
+     *
+     * update parameters:
+     * 0: burgers, 1: mean_free_path, 2: disl_density_resist, 3: forest_stress
+     */
+    if (flag_harden == 0){
+        statev[sdv_ind(num,"ACC")] += statev[sdv_ind(num,"SSR")] * dtime;
+    }
+    if (flag_harden == 1){ 
+        double c_forest = harden_params[8], c_nuc = harden_params[9], tau_nuc = harden_params[10],\
+               c_multi = harden_params[11], c_annih = 0.,\
+               D = harden_params[12] * 1e6, ref_srate = harden_params[13], gg = c_forest/harden_params[14],\
+               burgers = burgers_vec.norm() * 1e-10, mfp = statev[sdv_ind(num,"mfp")], \
+               forest_stress = statev[sdv_ind(num,"tauf")], SSD_density = statev[sdv_ind(num,"DD")], \
+               shear_rate = statev[sdv_ind(num,"SSR")], rho_sat = 0., rho_mov = 0.;
+        /* double equi_strain_rate = strain_rate(2,2); */
+        /* double equi_strain_rate = calc_first_principal(strain_rate); */
+        /* double equi_strain_rate = abs(shear_rate); */
+        double equi_strain_rate = calc_equivalent_value(strain_rate);
+        rho_sat = c_forest * burgers / gg * (1-k_boltzmann * temperature/D/pow(burgers,3) * log(abs(equi_strain_rate)/ref_srate));
+        rho_sat = max(pow(1/rho_sat,2), 0.5*SSD_density);
+        /* double eff_nuc_stress = max(abs(rss) - forest_stress, 0.) - tau_nuc; */
+        double eff_nuc_stress = abs(cal_rss(stress)) - tau_nuc;
+        double term_nuc = c_nuc * max(eff_nuc_stress,0.) / (shear_modulus * burgers * burgers);
+        double term_multi = c_multi / mfp; 
+        c_annih = (term_multi + term_nuc) / rho_sat;
+        double disloc_incre = (term_multi + term_nuc - c_annih * SSD_density) * abs(shear_rate) * dtime;
+        if (disloc_incre > 2 * rho_sat) {
+            disloc_incre = 2 * rho_sat - SSD_density; 
+        }
+        else if (disloc_incre + SSD_density < 0) disloc_incre = -0.1 * SSD_density; 
+        SSD_density += disloc_incre;
+        rho_mov = SSD_density;
+        if(SSD_density < rho_init) rho_init = SSD_density;
+        statev[sdv_ind(num,"DD")] = SSD_density;
+    }
+}
+
+inline void Slip::update_rho_hard(double *statev, double dtime, double temperature){
+    // Calculate the coplanar interaction in FCC 111 slip systems
+    double d_term_coplanar = 0, coeff_coplanar = harden_params[15];
+    int index_1 = 1000, index_2 = 1000;
+    for (int mode_id = 0; mode_id < total_mode_num; ++mode_id){
+        if (mode_sys[mode_id]->type != slip) continue;
+        if (mode_sys[mode_id]->num == num) continue;
+        int inter_mode = interaction_mat(num, mode_id);
+        if (inter_mode != 2) continue;
+        if (index_1 == 1000) index_1 = mode_id;
+        else index_2 = mode_id;
+        if (index_1 != 1000 && index_2 != 1000) break;
+    }
+    double rho_1 = statev[sdv_ind(index_1, "DD")], rho_2 = statev[sdv_ind(index_2, "DD")], \
+           rho_x = statev[sdv_ind(num, "DD")];
+    double vel_1 = statev[sdv_ind(index_1, "SSR")] / (rho_1 * mode_sys[index_1]->burgers_vec.norm() * 1e-10), \
+           vel_2 = statev[sdv_ind(index_2, "SSR")] / (rho_2 * mode_sys[index_2]->burgers_vec.norm() * 1e-10), \
+           vel_x = statev[sdv_ind(num, "SSR")] / (rho_x * burgers_vec.norm() * 1e-10);
+    double plus_term = rho_1 * vel_1 * sqrt(rho_2) + rho_2 * vel_2 * sqrt(rho_1);
+    double minus_term = rho_1 * vel_1 * sqrt(rho_x) + rho_x * vel_x * sqrt(rho_1);
+    minus_term += rho_2 * vel_2 * sqrt(rho_x) + rho_x * vel_x * sqrt(rho_2);
+    d_term_coplanar = plus_term - minus_term;
+    d_term_coplanar = d_term_coplanar * coeff_coplanar * dtime;
+    if (d_term_coplanar + rho_x < 0) d_term_coplanar = -rho_x * 0.5;
+    /* custom_var = d_term_coplanar; */
+    statev[sdv_ind(num, "DD")] = rho_x + d_term_coplanar;
+    rho_init = min(rho_x+d_term_coplanar, rho_init);
+}

@@ -44,12 +44,12 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     if (*kstep == 1 && *kinc == 0){
         // Initialize the state variables
 
-        /* char temp[200]; */
-        /* int lenoutdir; */
-        /* getoutdir(temp, &lenoutdir, 200); */
-        /* processPath(temp, "\\param.txt"); */
-        /* ifstream cij(temp); */
-        ifstream cij("param.txt");
+        char temp[200];
+        int lenoutdir;
+        getoutdir(temp, &lenoutdir, 200);
+        processPath(temp, "\\param.txt");
+        ifstream cij(temp);
+        /* ifstream cij("param.txt"); */
         statev[0] = 0;
         statev[1] = 0;
         statev[2] = 0;

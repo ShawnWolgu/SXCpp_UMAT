@@ -25,7 +25,7 @@ Matrix6d strain_modi_tensor{
 };
 LatentMat lat_hard_mat = LatentMat::Identity();
 LatentMat interaction_mat = LatentMat::Identity();
-array<PMode*, MAX_MODE_NUM> mode_sys;
+PMode* mode_sys[MAX_MODE_NUM] = {nullptr};
 Slip slip_array[MAX_MODE_NUM] = {Slip()};
 
 extern "C" void getoutdir(char* outdir, int* lenoutdir, int len);

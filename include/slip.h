@@ -49,40 +49,7 @@ inline Slip::Slip() = default;
 
 inline Slip::Slip(int slip_num, Vector6d &slip_info, HardenVec &hardens,
                   LatentVec &latents, Matrix3d lattice_vec, double f_active) {
-    Vector3d plane_norm_disp;
-    num = slip_num, type = slip;
-    harden_params = hardens;
-    latent_params = latents;
-    flag_active = !(f_active < 1e-20);
-    for (int temp_idx = 0; temp_idx < 6; ++temp_idx) {
-        if (temp_idx < 3)
-            plane_norm_disp(temp_idx) = slip_info(temp_idx);
-        else {
-            if (temp_idx < 6)
-                burgers_vec(temp_idx - 3) = slip_info(temp_idx);
-        }
-    }
-    burgers_vec = (burgers_vec.transpose() * lattice_vec).transpose();
-    plane_norm = get_plane_norm(plane_norm_disp, lattice_vec);
-    schmidt = burgers_vec / burgers_vec.norm() * plane_norm.transpose();
-    if (flag_harden == 1) rho_init = harden_params[0] * f_active;
-    shear_modulus = 0;
-    cout << "Slip system " << num << " is initialized." << endl;
-    cout << "Burgers vector of slip system " << num << " is "
-        << burgers_vec.transpose() << endl;
-    cout << "Normal vector of slip system " << num << " is "
-        << plane_norm.transpose() << endl;
-    cout << "Harden parameters of slip system " << num << " is ";
-    for (int temp_idx = 0; temp_idx < harden_params.size(); ++temp_idx) {
-        cout << harden_params[temp_idx] << " ";
-    }
-    cout << endl;
-    cout << "Latent parameters of slip system " << num << " is ";
-    for (int temp_idx = 0; temp_idx < latent_params.size(); ++temp_idx) {
-        cout << latent_params[temp_idx] << " ";
-    }
-    cout << endl;
-    if_defined = true;
+    initialize(slip_num, slip_info, hardens, latents, lattice_vec, f_active);
 };
 
 inline void Slip::initialize(int slip_num, Vector6d &slip_info, HardenVec &hardens,

@@ -4,13 +4,15 @@
 #define MAX_HARDEN_NUM 20
 #define MAX_LATENT_NUM 8
 
+#define CRITERION_CONV 1e-4
+#define MAX_ITER_NUM 20
+
+#include <cstdio>
+#include <cstring>
 #include <Eigen/Eigen>
 #include <iostream>
-#include <fstream>
-#include <cstring>
-#include <memory>
-#include <array>
-#include <new>
+#include <stdexcept>
+#include <string>
 
 using namespace Eigen;
 using namespace std;
@@ -38,6 +40,5 @@ extern Matrix6d elastic_modulus_ref;
 extern Matrix6d strain_modi_tensor;
 extern LatentMat lat_hard_mat;
 extern LatentMat interaction_mat;
-extern array<PMode*, MAX_MODE_NUM> mode_sys;
-extern char slip_memory[];
-extern Slip* slip_pool[];
+extern PMode* mode_sys[];
+extern Slip slip_array[];

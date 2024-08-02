@@ -25,9 +25,8 @@ Matrix6d strain_modi_tensor{
 };
 LatentMat lat_hard_mat = LatentMat::Identity();
 LatentMat interaction_mat = LatentMat::Identity();
-array<PMode*, MAX_MODE_NUM> mode_sys;
-alignas(alignof(Slip)) char slip_memory[MAX_MODE_NUM * sizeof(Slip)];
-Slip* slip_pool[MAX_MODE_NUM];
+PMode* mode_sys[MAX_MODE_NUM] = {nullptr};
+Slip slip_array[MAX_MODE_NUM] = {Slip()};
 
 extern "C" void getoutdir(char* outdir, int* lenoutdir, int len);
 
@@ -40,29 +39,33 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
 	double* dfgrd1, int* noel, int* npt, int* layer, int* kspt,
 	int* kstep, int* kinc, short cmname_len){
     int umat_state = 0;
+    double temperature = *temp;
+    if (temperature == 0) temperature = 300;
     // Start of the umat function
-    if (*kstep == 1 && *kinc == 0){
+    if (*kstep == 1 && *kinc < 2){
         // Initialize the state variables
 
-        char temp[200];
-        int lenoutdir;
-        getoutdir(temp, &lenoutdir, 200);
-        processPath(temp, "\\param.txt");
-        ifstream cij(temp);
+        /* char temp[200]; */
+        /* int lenoutdir; */
+        /* getoutdir(temp, &lenoutdir, 200); */
+        /* processPath(temp, "\\param.txt"); */
+        /* ifstream cij(temp); */
+
+        const char* file_name = "param.txt";
         /* ifstream cij("param.txt"); */
         statev[0] = 0;
         statev[1] = 0;
         statev[2] = 0;
         statev[3] = statev[0]; statev[4] = statev[1]; statev[5] = statev[2]; // save the initial euler angle.
         if (total_mode_num == 0){
-            elastic_modulus_ref = read_elastic(cij);
-            lattice_vec = read_lattice(cij);
-            /* read_pmodes(cij); */
-            /* for (int pmode_id = 0; pmode_id < total_mode_num; pmode_id++){ */
-            /*     mode_sys[pmode_id]->cal_shear_modulus(elastic_modulus_ref); */
-            /*     mode_sys[pmode_id]->initial_statev(statev); */
-            /* } */
-            /* initialization_interaction(); */
+            elastic_modulus_ref = read_elastic(file_name);
+            lattice_vec = read_lattice(file_name);
+            read_pmodes(file_name);
+            for (int pmode_id = 0; pmode_id < total_mode_num; pmode_id++){
+                mode_sys[pmode_id]->cal_shear_modulus(elastic_modulus_ref);
+                mode_sys[pmode_id]->initial_statev(statev);
+            }
+            initialization_interaction();
         }
         else {
             for (int pmode_id = 0; pmode_id < total_mode_num; pmode_id++){
@@ -76,12 +79,11 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     Vector6d strain{{stran[0], stran[1], stran[2], stran[5]*0.5, stran[4]*0.5, stran[3]*0.5}};
     Vector6d dstrain_{{dstran[0], dstran[1], dstran[2], dstran[5]*0.5, dstran[4]*0.5, dstran[3]*0.5}};
     Vector6d stress_{{stress[0], stress[1], stress[2], stress[5], stress[4], stress[3]}};
-    Matrix3d spin_tensor{
+    Matrix3d d_rotation{
         {drot[0], drot[1], drot[2]}, 
         {drot[3], drot[4], drot[5]}, 
         {drot[6], drot[7], drot[8]}
     };
-    spin_tensor = spin_tensor/ *dtime;
     Matrix3d plastic_strain = tensor_trans_order(Vector6d{{statev[6], statev[7], statev[8], statev[9], statev[10], statev[11]}});
     double equiv_plas_strain = statev[12];
     statev[13] = 0.0;//dtemp
@@ -98,7 +100,7 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     // dotSigma - sigma*trace(Dp) + C Dp = We Sigma - Sigma We - sigma*trace(D) + C D
     Matrix3d spin_plas = Matrix3d::Zero();
     Matrix3d vel_grad_plas = Matrix3d::Zero();
-    Matrix3d spin_elas = spin_tensor - spin_plas;
+    Matrix3d spin_elas = d_rotation - spin_plas;
     Matrix3d strain_rate_plas = Matrix3d::Zero();
     Matrix3d strain_rate = tensor_trans_order(dstrain_) / *dtime;
     Matrix6d Cij_pri = get_C_ij_pri(elastic_modulus, stress_);
@@ -111,61 +113,110 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     // Calculate the stress increment and ddsdde
     Vector6d stress_incr_rate = elastic_modulus * strain_modi_tensor * tensor_trans_order(strain_rate);
     Matrix6d ddp_by_dsigma = Matrix6d::Zero();
-    Matrix3d stress_in_iter; Vector6d dp_term; Vector6d F_obj; Matrix6d dF_obj;
+    Matrix3d stress_in_iter; Vector6d dp_term; Vector6d F_obj, dX; Matrix6d dF_obj;
     double step_scale = 1.0;
     double F_norm = 1000.0;
-    for (int n_iter = 0; n_iter < 20; n_iter++){
-        stress_in_iter = stress_3d + tensor_trans_order(stress_incr_rate) * *dtime;
-        vel_grad_plas = get_vel_grad_plas(stress_in_iter, orientation, statev, *temp);
-        strain_rate_plas = 0.5 * (vel_grad_plas + vel_grad_plas.transpose());
-        ddp_by_dsigma = get_dp_grad(stress_in_iter, orientation, statev, *temp);
-        dp_term = Cij_pri * strain_modi_tensor * tensor_trans_order(strain_rate_plas);
-        F_obj = stress_incr_rate + dp_term - unchanged_term;
-        dF_obj = Matrix6d::Identity() + Cij_pri * strain_modi_tensor * ddp_by_dsigma;
-        if (isnan(F_obj.norm())){
-            /* cout << "[Warning No.1] SXCpp UMAT Warning: NaN values in the stress increment calculation." << endl; */
-            umat_state = 1;
-            stress_incr_rate = Vector6d::Zero();
-            vel_grad_plas = Matrix3d::Zero();
-            strain_rate_plas = Matrix3d::Zero();
-            ddp_by_dsigma = Matrix6d::Zero();
-            break;
-        }
-        if (F_obj.norm() < 1e-4) break;
-        if (n_iter > 8){
-            if (F_obj.norm() > 1e-3 || F_obj.norm() > F_norm) {
-                step_scale = max(0.1, step_scale * 0.5);
-                if (step_scale != 0.1) n_iter -= 1;
+    int iteration_num = 0;
+
+    //iteration: Newton-Raphson method
+    do{
+        for (int n_iter = 0; n_iter < 5; n_iter++) {
+            stress_in_iter = stress_3d + tensor_trans_order(stress_incr_rate) * *dtime;
+            vel_grad_plas = get_vel_grad_plas(stress_in_iter, orientation, statev, temperature);
+            strain_rate_plas = 0.5 * (vel_grad_plas + vel_grad_plas.transpose());
+            ddp_by_dsigma = get_dp_grad(stress_in_iter, orientation, statev, temperature);
+            dp_term = Cij_pri * strain_modi_tensor * tensor_trans_order(strain_rate_plas);
+            F_obj = stress_incr_rate + dp_term - unchanged_term;
+            dF_obj = Matrix6d::Identity() + Cij_pri * strain_modi_tensor * ddp_by_dsigma;
+            F_norm = F_obj.norm();
+            if (std::isnan(F_norm)) {
+                cout << "[NaN]" << endl;
+                umat_state = 1;
+                stress_incr_rate = elastic_modulus * strain_modi_tensor * tensor_trans_order(strain_rate);
+                vel_grad_plas = Matrix3d::Zero();
+                strain_rate_plas = Matrix3d::Zero();
+                ddp_by_dsigma = Matrix6d::Zero();
+                break;
             }
-            else step_scale = min(1.0, step_scale * 1.5);
+            if (F_norm < CRITERION_CONV) break;
+            dX = dF_obj.inverse() * F_obj;
+            stress_incr_rate -= dX;
+            if (dX.norm() / stress_incr_rate.norm() < 1e-4) break;
+            /* cout << "NR iter: " << n_iter << " F_norm: " << F_norm << endl; */
         }
-        Vector6d dX = dF_obj.inverse() * F_obj;
-        stress_incr_rate -= dX * step_scale;
-        /* cout << "--" << stress_incr_rate.transpose() << "," << F_obj.norm() << "," << step_scale << endl; */
-        F_norm = F_obj.norm();
-    }
-    cout << stress_incr_rate.transpose() << endl;
-    if (F_obj.norm() > 1e-3) {
-        /* cout << "[Warning No.2] SXCpp UMAT Error: The stress increment calculation did not converge." << endl; */
+        if (F_norm < CRITERION_CONV) break;
+
+        bool downhill_converged = false;
+        double initial_F_norm = F_obj.norm();
+        double current_F_norm = initial_F_norm;
+        step_scale = 1;
+        for (int downhill_iter = 0; downhill_iter < 20; downhill_iter++) {
+            if (current_F_norm < 1e-4) {
+                downhill_converged = true;
+                break;
+            }
+            stress_in_iter = stress_3d + tensor_trans_order(stress_incr_rate) * *dtime;
+            vel_grad_plas = get_vel_grad_plas(stress_in_iter, orientation, statev, temperature);
+            strain_rate_plas = 0.5 * (vel_grad_plas + vel_grad_plas.transpose());
+            ddp_by_dsigma = get_dp_grad(stress_in_iter, orientation, statev, temperature);
+            dp_term = Cij_pri * strain_modi_tensor * tensor_trans_order(strain_rate_plas);
+            F_obj = stress_incr_rate + dp_term - unchanged_term;
+            current_F_norm = F_obj.norm();
+            dF_obj = Matrix6d::Identity() + Cij_pri * strain_modi_tensor * ddp_by_dsigma;
+            if (std::isnan(current_F_norm)) {
+                cout << "[NaN]" << endl;
+                umat_state = 1;
+                stress_incr_rate = elastic_modulus * strain_modi_tensor * tensor_trans_order(strain_rate);
+                vel_grad_plas = Matrix3d::Zero();
+                strain_rate_plas = Matrix3d::Zero();
+                ddp_by_dsigma = Matrix6d::Zero();
+                break;
+            }
+            if (current_F_norm < initial_F_norm) {
+                step_scale = std::min(1.0, step_scale * 1.2);
+                initial_F_norm = current_F_norm;
+                dX = dF_obj.inverse() * F_obj;
+                stress_incr_rate -= dX * step_scale;
+            } else {
+                stress_incr_rate += dX * step_scale * 0.5;
+                step_scale = step_scale * 0.5;
+            }
+            if (dX.norm()*step_scale / stress_incr_rate.norm() < 1e-4) break;
+            /* cout << "Downhill iter: " << downhill_iter << " F_norm: " << current_F_norm << endl; */
+        }
+        /* cout << F_obj.norm() << endl; */
+        ++iteration_num;
+    } while (F_norm > CRITERION_CONV && iteration_num < MAX_ITER_NUM);
+
+    if (F_obj.norm() > 10*CRITERION_CONV) {
+        cout << "[Warning No.2] SXCpp UMAT Error: The stress increment calculation did not converge." << endl;
+        cout << "F_obj: " << F_obj.norm() << endl;
         umat_state = 2;
     }
+    //
     // Update the state variables
+    /* cout << "pe_frac: " << calc_equivalent_value(strain_rate_plas)/calc_equivalent_value(strain_rate) << endl; */
     plastic_strain += strain_rate_plas * *dtime;
     Matrix3d elastic_strain = tensor_trans_order(strain) - plastic_strain;
     spin_plas = 0.5 * (vel_grad_plas - vel_grad_plas.transpose());
-    spin_elas = spin_tensor - spin_plas;
-    orientation = orientation * Rodrigues(spin_elas).transpose(); 
+    spin_elas = - spin_plas;
+    Matrix3d orientation_G = Euler_trans(statev[3], statev[4], statev[5]);
+    Matrix3d rot_matrix = d_rotation * orientation_G * orientation.transpose();
+    orientation = orientation * Rodrigues(spin_elas * *time).transpose(); 
     Vector3d new_euler = Euler_trans(orientation);
     statev[0] = new_euler(0); statev[1] = new_euler(1); statev[2] = new_euler(2);
+    orientation_G = rot_matrix * orientation;
+    new_euler = Euler_trans(orientation_G);
+    statev[3] = new_euler(0); statev[4] = new_euler(1); statev[5] = new_euler(2);
     Matrix3d stress_grain = tensor_rot_to_CryCoord(stress_in_iter, orientation);
     for (int pmode_id = 0; pmode_id < total_mode_num; pmode_id++){
-        mode_sys[pmode_id]->update_ssd(strain_rate, stress_grain, statev, *dtime, *temp);
+        mode_sys[pmode_id]->update_ssd(strain_rate, stress_grain, statev, *dtime, temperature);
     }
     /* for (int pmode_id = 0; pmode_id < total_mode_num; pmode_id++){ */
     /*     mode_sys[pmode_id]->update_rho_hard(statev, *dtime, *temp); */
     /* } */
     for (int pmode_id = 0; pmode_id < total_mode_num; pmode_id++){
-        mode_sys[pmode_id]->update_status(orientation, elastic_strain, *dtime, *temp, statev);
+        mode_sys[pmode_id]->update_status(orientation, elastic_strain, *dtime, temperature, statev);
     }
     stress_ = tensor_trans_order(stress_in_iter);
     Vector6d sigma_out = change_basis_order(stress_);
@@ -176,6 +227,12 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     Matrix6d modulus_eff = stiffness_eff.inverse();
     Matrix6d C_ijkl = change_basis_order(modulus_eff);
     ddsdde_from_matrix(C_ijkl, ddsdde);
+    Vector6d pe_vec = tensor_trans_order(plastic_strain);
+    statev[6] = pe_vec(0); statev[7] = pe_vec(1); statev[8] = pe_vec(2);
+    statev[9] = pe_vec(3); statev[10] = pe_vec(4); statev[11] = pe_vec(5);
+    equiv_plas_strain = calc_equivalent_value(plastic_strain);
+    statev[12] = equiv_plas_strain;
+    statev[13] = 0.0;//dtemp
 }
 
 /* int main(){ */

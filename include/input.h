@@ -94,13 +94,18 @@ inline void read_pmodes(ifstream &is){
         for (int mode_child_idx = 0; mode_child_idx < temp_num; ++mode_child_idx){
             int pmode_num = total_mode_num + mode_child_idx;
             for(int i=0; i<6; ++i) slip_info(i) = temp_info[mode_child_idx][i];
-            if (temp_type == slip) 
-                mode_sys[pmode_num] = make_unique<Slip>(pmode_num, slip_info, hardens, latents, lattice_vec, 1.0);
-            else if (temp_type == twin) 
-                mode_sys[pmode_num] = make_unique<Slip>(pmode_num, slip_info, hardens, latents, lattice_vec, 1.0);
+            if (temp_type == slip){
+                slip_pool[pmode_num] = new (&slip_memory[pmode_num * sizeof(Slip)]) Slip(pmode_num, slip_info, hardens, latents, lattice_vec, 1.0);
+                mode_sys[pmode_num] = slip_pool[pmode_num];
+            }
+            else if (temp_type == twin) {
+                slip_pool[pmode_num] = new (&slip_memory[pmode_num * sizeof(Slip)]) Slip(pmode_num, slip_info, hardens, latents, lattice_vec, 1.0);
+                mode_sys[pmode_num] = slip_pool[pmode_num];
                 /* mode_sys[pmode_num] = Twin(pmode_num, slip_info, hardens, latents, lattice_vec, f_active); */
+            }
             else {
                 cout << "Undefined mode type" << endl;
+                throw runtime_error("SXCpp Error: Undefined mode type");
                 break;
             }
         }

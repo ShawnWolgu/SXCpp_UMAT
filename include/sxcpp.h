@@ -9,6 +9,8 @@
 #include <fstream>
 #include <cstring>
 #include <memory>
+#include <array>
+#include <new>
 
 using namespace Eigen;
 using namespace std;
@@ -36,4 +38,6 @@ extern Matrix6d elastic_modulus_ref;
 extern Matrix6d strain_modi_tensor;
 extern LatentMat lat_hard_mat;
 extern LatentMat interaction_mat;
-extern unique_ptr<PMode> mode_sys[];
+extern array<PMode*, MAX_MODE_NUM> mode_sys;
+extern char slip_memory[];
+extern Slip* slip_pool[];

@@ -25,7 +25,9 @@ Matrix6d strain_modi_tensor{
 };
 LatentMat lat_hard_mat = LatentMat::Identity();
 LatentMat interaction_mat = LatentMat::Identity();
-unique_ptr<PMode> mode_sys[MAX_MODE_NUM];
+array<PMode*, MAX_MODE_NUM> mode_sys;
+alignas(alignof(Slip)) char slip_memory[MAX_MODE_NUM * sizeof(Slip)];
+Slip* slip_pool[MAX_MODE_NUM];
 
 extern "C" void getoutdir(char* outdir, int* lenoutdir, int len);
 
@@ -37,6 +39,7 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
 	double* coords, double* drot, double* pnewdt, double* celent, double* dfgrd0,
 	double* dfgrd1, int* noel, int* npt, int* layer, int* kspt,
 	int* kstep, int* kinc, short cmname_len){
+    int umat_state = 0;
     // Start of the umat function
     if (*kstep == 1 && *kinc == 0){
         // Initialize the state variables
@@ -82,10 +85,13 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     Matrix3d plastic_strain = tensor_trans_order(Vector6d{{statev[6], statev[7], statev[8], statev[9], statev[10], statev[11]}});
     double equiv_plas_strain = statev[12];
     statev[13] = 0.0;//dtemp
-    //
+
+    // Jump out if the strain increment is zero: initial stress step
     if (dstrain_.norm() < 1e-20){
-        Matrix6d C_ijkl = change_basis_order(elastic_modulus);
-        ddsdde_from_matrix(C_ijkl, ddsdde);
+        for (int i = 0; i < 6; i++){
+            stress[i] += 0;
+        }
+        ddsdde_from_matrix(elastic_modulus, ddsdde);
         return;
     }
     // dotSigma - WeSigma + SigmaWe + sigma*trace(De) = C De
@@ -109,7 +115,7 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     Matrix3d stress_in_iter; Vector6d dp_term; Vector6d F_obj; Matrix6d dF_obj;
     double step_scale = 1.0;
     double F_norm = 1000.0;
-    for (int n_iter = 0; n_iter < 200; n_iter++){
+    for (int n_iter = 0; n_iter < 20; n_iter++){
         stress_in_iter = stress_3d + tensor_trans_order(stress_incr_rate) * *dtime;
         vel_grad_plas = get_vel_grad_plas(stress_in_iter, orientation, statev, *temp);
         strain_rate_plas = 0.5 * (vel_grad_plas + vel_grad_plas.transpose());
@@ -118,11 +124,20 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
         F_obj = stress_incr_rate + dp_term - unchanged_term;
         dF_obj = Matrix6d::Identity() + Cij_pri * strain_modi_tensor * ddp_by_dsigma;
         if (isnan(F_obj.norm())){
-            throw runtime_error("SXCpp UMAT Error: NaN values in the stress increment calculation.");
+            /* cout << "[Warning No.1] SXCpp UMAT Warning: NaN values in the stress increment calculation." << endl; */
+            umat_state = 1;
+            stress_incr_rate = Vector6d::Zero();
+            vel_grad_plas = Matrix3d::Zero();
+            strain_rate_plas = Matrix3d::Zero();
+            ddp_by_dsigma = Matrix6d::Zero();
+            break;
         }
         if (F_obj.norm() < 1e-4) break;
-        if (n_iter > 10){
-            if (F_obj.norm() > 1e-3 || F_obj.norm() > F_norm) step_scale = max(0.1, step_scale * 0.5);
+        if (n_iter > 8){
+            if (F_obj.norm() > 1e-3 || F_obj.norm() > F_norm) {
+                step_scale = max(0.1, step_scale * 0.5);
+                if (step_scale != 0.1) n_iter -= 1;
+            }
             else step_scale = min(1.0, step_scale * 1.5);
         }
         Vector6d dX = dF_obj.inverse() * F_obj;
@@ -132,7 +147,8 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     }
     cout << stress_incr_rate.transpose() << endl;
     if (F_obj.norm() > 1e-3) {
-        throw runtime_error("SXCpp UMAT Error: The stress increment calculation did not converge.");
+        /* cout << "[Warning No.2] SXCpp UMAT Error: The stress increment calculation did not converge." << endl; */
+        umat_state = 2;
     }
     // Update the state variables
     plastic_strain += strain_rate_plas * *dtime;
@@ -163,86 +179,92 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     ddsdde_from_matrix(C_ijkl, ddsdde);
 }
 
-/* int main(){ */
-/*     // Initialize the variables */
-/*     double stress[6] = {0}; */
-/*     double stress_backup[6] = {0}; */
-/*     double statev[100] = {0}; */
-/*     double statev_backup[100] = {0}; */
-/*     double ddsdde[36] = {0}; */
-/*     double sse = 0, spd = 0, scd = 0, rpl = 0, ddsddt = 0, drplde = 0, drpldt = 0; */
-/*     double stran[6] = {0}, dstran[6] = {0}; */
-/*     double predef = 0, dpred = 0; */
-/*     char cmname[1] = {'\0'}; */
-/*     int ndi = 0, nshr = 0, ntens = 0, nstatv = 13, nprops = 0; */
-/*     double props[4] = {10, 10, 10, 0.5}; */
-/*     double coords[3] = {0}, drot[9] = {0}, pnewdt = 0, celent = 0, dfgrd0[3] = {0}, dfgrd1[3] = {0}; */
-/*     int noel = 0, npt = 0, layer = 0, kspt = 0, kstep = 1, kinc = 0; */
-/*     short cmname_len = 0; */
-/**/
-/*     // Define the deformation rate */
-/*     double deformation_rate = 0.01;  // This is just an example value */
-/**/
-/*     // Define the time step */
-/*     double time = 0; */
-/*     double dtime = 0.01;  // This is just an example value */
-/*     // Define the temperature  */
-/*     double temp = 300, dtemp = 0; */
-/*     // */
-/*     // Time-stepping loop */
-/*     for (int kinc = 0; kinc < 1000; ++kinc) { */
-/*         // Initialize the strain increment */
-/*         dstran[0] = deformation_rate * dtime; */
-/*         dstran[1] = -deformation_rate * dtime * 0.4866; */
-/*         dstran[2] = -deformation_rate * dtime * 0.4866; */
-/*         dstran[3] = 0; */
-/*         dstran[4] = 0; */
-/*         dstran[5] = 0; */
-/**/
-/*         Eigen::MatrixXd F(5, 1); F = Eigen::MatrixXd::Zero(5, 1); */
-/*         Eigen::MatrixXd dF(5, 5); dF = Eigen::MatrixXd::Zero(5, 5); */
-/**/
-/*         for (int n_iter = 0; n_iter < 20; n_iter++){ */
-/*             // Call the umat function */
-/*             for (int i = 0; i < 100; i++){ */
-/*                 statev[i] = statev_backup[i]; */
-/*             } */
-/*             for (int i = 0; i < 6; i++){ */
-/*                 stress[i] = stress_backup[i]; */
-/*             } */
-/*             umat(stress, statev, ddsdde, &sse, &spd, &scd, &rpl, &ddsddt, &drplde, &drpldt, */
-/*                  stran, dstran, &time, &dtime, &temp, &dtemp, &predef, &dpred, cmname, &ndi, */
-/*                  &nshr, &ntens, &nstatv, props, &nprops, coords, drot, &pnewdt, &celent, dfgrd0, */
-/*                  dfgrd1, &noel, &npt, &layer, &kspt, &kstep, &kinc, cmname_len); */
-/*             for (int i = 1; i < 6; i++){ */
-/*                 F(i-1) = stress[i]; */
-/*                 for (int j = 1; j < 6; j++){ */
-/*                     dF(i-1, j-1) = ddsdde[6*i + j]; */
-/*                 } */
-/*             } */
-/*             if (F.norm() < 0.1) break; */
-/*             Eigen::MatrixXd dX(5,1); */
-/*             dX = dF.inverse() * F; */
-/*             for (int i = 0; i < 5; i++){ */
-/*                 dstran[i+1] -= 1* dX(i); */
-/*             } */
-/*         } */
-/*         for (int i = 0; i < 100; i++){ */
-/*             statev_backup[i] = statev[i]; */
-/*         } */
-/*         for (int i = 0; i < 6; i++){ */
-/*             stress_backup[i] = stress[i]; */
-/*         } */
-/*         for (int i = 0; i < 6; i++){ */
-/*             stran[i] += dstran[i]; */
-/*         } */
-/*         // Print the results for this step */
-/*         std::cout << stran[0] << "," << stran[1] << "," << stran[2] << "," << stran[3] << "," << stran[4] << "," << stran[5] << ","; */
-/*         std::cout << stress[0] << "," << stress[1] << "," << stress[2] << "," << stress[3] << "," << stress[4] << "," << stress[5] << ","; */
-/*         std::cout << statev[0] << "," << statev[1] << "," << statev[2] << "," ; */
-/*         std::cout << statev[sdv_ind(0,"DD")] << "," << statev[sdv_ind(1,"DD")] << "," << statev[sdv_ind(2,"DD")] << "," << statev[sdv_ind(3,"DD")] << ","; */
-/*         std::cout << statev[sdv_ind(4,"DD")] << "," << statev[sdv_ind(5,"DD")] << "," << statev[sdv_ind(6,"DD")] << "," << statev[sdv_ind(7,"DD")] << ","; */
-/*         std::cout << statev[sdv_ind(8,"DD")] << "," << statev[sdv_ind(9,"DD")] << "," << statev[sdv_ind(10,"DD")] << "," << statev[sdv_ind(11,"DD")] << endl; */
-/*     } */
-/*     return 0; */
-/* } */
+int main(){
+    // Initialize the variables
+    double stress[6] = {0};
+    double stress_backup[6] = {0};
+    double statev[100] = {0};
+    double statev_backup[100] = {0};
+    double ddsdde[36] = {0};
+    double sse = 0, spd = 0, scd = 0, rpl = 0, ddsddt = 0, drplde = 0, drpldt = 0;
+    double stran[6] = {0}, dstran[6] = {0};
+    double predef = 0, dpred = 0;
+    char cmname[1] = {'\0'};
+    int ndi = 0, nshr = 0, ntens = 0, nstatv = 13, nprops = 0;
+    double props[4] = {10, 10, 10, 0.5};
+    double coords[3] = {0}, drot[9] = {0}, pnewdt = 0, celent = 0, dfgrd0[3] = {0}, dfgrd1[3] = {0};
+    int noel = 0, npt = 0, layer = 0, kspt = 0, kstep = 1, kinc = 0;
+    short cmname_len = 0;
+
+    // Define the deformation rate
+    double deformation_rate = 0.01;  // This is just an example value
+
+    // Define the time step
+    double time = 0;
+    double dtime = 0.01;  // This is just an example value
+    // Define the temperature 
+    double temp = 300, dtemp = 0;
+    //
+    // Time-stepping loop
+    for (int kinc = 0; kinc < 1000; ++kinc) {
+        // Initialize the strain increment
+        dstran[0] = deformation_rate * dtime;
+        dstran[1] = -deformation_rate * dtime * 0.4866;
+        dstran[2] = -deformation_rate * dtime * 0.4866;
+        dstran[3] = 0;
+        dstran[4] = 0;
+        dstran[5] = 0;
+
+        Eigen::MatrixXd F(5, 1); F = Eigen::MatrixXd::Zero(5, 1);
+        Eigen::MatrixXd dF(5, 5); dF = Eigen::MatrixXd::Zero(5, 5);
+
+        for (int n_iter = 0; n_iter < 20; n_iter++){
+            // Call the umat function
+            for (int i = 0; i < 100; i++){
+                statev[i] = statev_backup[i];
+            }
+            for (int i = 0; i < 6; i++){
+                stress[i] = stress_backup[i];
+            }
+            umat(stress, statev, ddsdde, &sse, &spd, &scd, &rpl, &ddsddt, &drplde, &drpldt,
+                 stran, dstran, &time, &dtime, &temp, &dtemp, &predef, &dpred, cmname, &ndi,
+                 &nshr, &ntens, &nstatv, props, &nprops, coords, drot, &pnewdt, &celent, dfgrd0,
+                 dfgrd1, &noel, &npt, &layer, &kspt, &kstep, &kinc, cmname_len);
+            for (int i = 1; i < 6; i++){
+                F(i-1) = stress[i];
+                for (int j = 1; j < 6; j++){
+                    dF(i-1, j-1) = ddsdde[6*i + j];
+                }
+            }
+            if (F.norm() < 0.1) break;
+            Eigen::MatrixXd dX(5,1);
+            dX = dF.inverse() * F;
+            for (int i = 0; i < 5; i++){
+                dstran[i+1] -= 1* dX(i);
+            }
+        }
+        for (int i = 0; i < 100; i++){
+            statev_backup[i] = statev[i];
+        }
+        for (int i = 0; i < 6; i++){
+            stress_backup[i] = stress[i];
+        }
+        for (int i = 0; i < 6; i++){
+            stran[i] += dstran[i];
+        }
+        // Print the results for this step
+        std::cout << stran[0] << "," << stran[1] << "," << stran[2] << "," << stran[3] << "," << stran[4] << "," << stran[5] << ",";
+        std::cout << stress[0] << "," << stress[1] << "," << stress[2] << "," << stress[3] << "," << stress[4] << "," << stress[5] << ",";
+        std::cout << statev[0] << "," << statev[1] << "," << statev[2] << "," ;
+        std::cout << statev[sdv_ind(0,"DD")] << "," << statev[sdv_ind(1,"DD")] << "," << statev[sdv_ind(2,"DD")] << "," << statev[sdv_ind(3,"DD")] << ",";
+        std::cout << statev[sdv_ind(4,"DD")] << "," << statev[sdv_ind(5,"DD")] << "," << statev[sdv_ind(6,"DD")] << "," << statev[sdv_ind(7,"DD")] << ",";
+        std::cout << statev[sdv_ind(8,"DD")] << "," << statev[sdv_ind(9,"DD")] << "," << statev[sdv_ind(10,"DD")] << "," << statev[sdv_ind(11,"DD")] << endl;
+    }
+    // Explicitly call destructors for cleanup
+    for (int i = 0; i < total_mode_num; ++i) {
+        if (slip_pool[i]) {
+            slip_pool[i]->~Slip();
+        }
+    }
+    return 0;
+}

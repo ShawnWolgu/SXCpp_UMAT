@@ -95,11 +95,11 @@ inline void read_pmodes(ifstream &is){
             int pmode_num = total_mode_num + mode_child_idx;
             for(int i=0; i<6; ++i) slip_info(i) = temp_info[mode_child_idx][i];
             if (temp_type == slip){
-                slip_array[pmode_num] = Slip(pmode_num, slip_info, hardens, latents, lattice_vec, 1.0);
+                slip_array[pmode_num].initialize(pmode_num, slip_info, hardens, latents, lattice_vec, 1.0);
                 mode_sys[pmode_num] = &slip_array[pmode_num];
             }
             else if (temp_type == twin) {
-                slip_array[pmode_num] = Slip(pmode_num, slip_info, hardens, latents, lattice_vec, 1.0);
+                slip_array[pmode_num].initialize(pmode_num, slip_info, hardens, latents, lattice_vec, 1.0);
                 mode_sys[pmode_num] = &slip_array[pmode_num];
                 /* mode_sys[pmode_num] = Twin(pmode_num, slip_info, hardens, latents, lattice_vec, f_active); */
             }

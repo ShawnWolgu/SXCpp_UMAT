@@ -39,5 +39,4 @@ extern Matrix6d strain_modi_tensor;
 extern LatentMat lat_hard_mat;
 extern LatentMat interaction_mat;
 extern array<PMode*, MAX_MODE_NUM> mode_sys;
-extern char slip_memory[];
-extern Slip* slip_pool[];
+extern Slip slip_array[];

@@ -26,8 +26,7 @@ Matrix6d strain_modi_tensor{
 LatentMat lat_hard_mat = LatentMat::Identity();
 LatentMat interaction_mat = LatentMat::Identity();
 array<PMode*, MAX_MODE_NUM> mode_sys;
-alignas(alignof(Slip)) char slip_memory[MAX_MODE_NUM * sizeof(Slip)];
-Slip* slip_pool[MAX_MODE_NUM];
+Slip slip_array[MAX_MODE_NUM] = {Slip()};
 
 extern "C" void getoutdir(char* outdir, int* lenoutdir, int len);
 
@@ -44,12 +43,13 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     if (*kstep == 1 && *kinc == 0){
         // Initialize the state variables
 
-        char temp[200];
-        int lenoutdir;
-        getoutdir(temp, &lenoutdir, 200);
-        processPath(temp, "\\param.txt");
-        ifstream cij(temp);
-        /* ifstream cij("param.txt"); */
+        /* char temp[200]; */
+        /* int lenoutdir; */
+        /* getoutdir(temp, &lenoutdir, 200); */
+        /* processPath(temp, "\\param.txt"); */
+        /* ifstream cij(temp); */
+
+        ifstream cij("param.txt");
         statev[0] = 0;
         statev[1] = 0;
         statev[2] = 0;
@@ -145,7 +145,6 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
         /* cout << "--" << stress_incr_rate.transpose() << "," << F_obj.norm() << "," << step_scale << endl; */
         F_norm = F_obj.norm();
     }
-    cout << stress_incr_rate.transpose() << endl;
     if (F_obj.norm() > 1e-3) {
         /* cout << "[Warning No.2] SXCpp UMAT Error: The stress increment calculation did not converge." << endl; */
         umat_state = 2;
@@ -261,10 +260,5 @@ int main(){
         std::cout << statev[sdv_ind(8,"DD")] << "," << statev[sdv_ind(9,"DD")] << "," << statev[sdv_ind(10,"DD")] << "," << statev[sdv_ind(11,"DD")] << endl;
     }
     // Explicitly call destructors for cleanup
-    for (int i = 0; i < total_mode_num; ++i) {
-        if (slip_pool[i]) {
-            slip_pool[i]->~Slip();
-        }
-    }
     return 0;
 }

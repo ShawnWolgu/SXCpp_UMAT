@@ -2,6 +2,7 @@
 #include "func.h"
 #include "pmode.h"
 #include "sxcpp.h"
+#include <array>
 #include <memory>
 
 double waiting_time(double stress_eff, double resistance_slip,
@@ -35,8 +36,8 @@ private:
     double cal_strain_disvel(Matrix3d stress_tensor, double temperature, double* statev);
     double cal_ddgamma_dtau_pow(Matrix3d stress_tensor, double* statev);
     double cal_ddgamma_dtau_disvel(Matrix3d stress_tensor, double temperature, double* statev);
-    void update_voce(unique_ptr<PMode> mode_sys[], LatentMat &lat_hard_mat, double dtime, double *statev);
-    void update_disvel(unique_ptr<PMode> mode_sys[], LatentMat &lat_hard_mat, double bv,
+    void update_voce(LatentMat &lat_hard_mat, double dtime, double *statev);
+    void update_disvel(LatentMat &lat_hard_mat, double bv,
                        double dtime, double temperature, double* statev);
     double disl_velocity(double rss, double burgers, double temperature, double* statev);
     double disl_velocity_grad(double rss, double burgers, double temperature, double* statev);
@@ -143,19 +144,19 @@ inline void Slip::update_status(Matrix3d orientation, Matrix3d strain_elas,
     Vector3d update_bv = burgers_vec;
     switch (flag_harden) {
         case 0:
-            update_voce(mode_sys, lat_hard_mat, dtime, statev);
+            update_voce(lat_hard_mat, dtime, statev);
             break;
         case 1:
-            update_disvel(mode_sys, lat_hard_mat, update_bv.norm(), dtime, temperature, statev);
+            update_disvel(lat_hard_mat, update_bv.norm(), dtime, temperature, statev);
             break;
         default:
-            update_voce(mode_sys, lat_hard_mat, dtime, statev);
+            update_voce(lat_hard_mat, dtime, statev);
             break;
     }
 }
 
 /* Update crss */
-inline void Slip::update_voce(unique_ptr<PMode> mode_sys[], LatentMat &lat_hard_mat, double dtime, double *statev) {
+inline void Slip::update_voce(LatentMat &lat_hard_mat, double dtime, double *statev) {
     double Gamma = 0; double crss = statev[sdv_ind(num, "CRSS")];
     for (int crt_mode_idx = 0; crt_mode_idx < total_mode_num; ++crt_mode_idx) {
         Gamma += abs(statev[sdv_ind(crt_mode_idx, "ACC")]);
@@ -172,7 +173,7 @@ inline void Slip::update_voce(unique_ptr<PMode> mode_sys[], LatentMat &lat_hard_
     statev[sdv_ind(num, "CRSS")] = crss;
 }
 
-inline void Slip::update_disvel(unique_ptr<PMode> mode_sys[], LatentMat &lat_hard_mat, double bv,
+inline void Slip::update_disvel(LatentMat &lat_hard_mat, double bv,
                        double dtime, double temperature, double* statev) {
     /*
      * [velocity parameters] 
@@ -469,6 +470,7 @@ inline void Slip::update_ssd(Matrix3d strain_rate, Matrix3d stress, double *stat
         double equi_strain_rate = calc_equivalent_value(strain_rate);
         rho_sat = c_forest * burgers / gg * (1-k_boltzmann * temperature/D/pow(burgers,3) * log(abs(equi_strain_rate)/ref_srate));
         rho_sat = max(pow(1/rho_sat,2), 0.5*SSD_density);
+        if (equi_strain_rate < 1e-20) rho_sat = SSD_density;
         /* double eff_nuc_stress = max(abs(rss) - forest_stress, 0.) - tau_nuc; */
         double eff_nuc_stress = abs(cal_rss(stress)) - tau_nuc;
         double term_nuc = c_nuc * max(eff_nuc_stress,0.) / (shear_modulus * burgers * burgers);

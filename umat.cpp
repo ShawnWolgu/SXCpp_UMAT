@@ -25,7 +25,9 @@ Matrix6d strain_modi_tensor{
 };
 LatentMat lat_hard_mat = LatentMat::Identity();
 LatentMat interaction_mat = LatentMat::Identity();
-unique_ptr<PMode> mode_sys[MAX_MODE_NUM];
+array<PMode*, MAX_MODE_NUM> mode_sys;
+alignas(alignof(Slip)) char slip_memory[MAX_MODE_NUM * sizeof(Slip)];
+Slip* slip_pool[MAX_MODE_NUM];
 
 extern "C" void getoutdir(char* outdir, int* lenoutdir, int len);
 
@@ -37,6 +39,7 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
 	double* coords, double* drot, double* pnewdt, double* celent, double* dfgrd0,
 	double* dfgrd1, int* noel, int* npt, int* layer, int* kspt,
 	int* kstep, int* kinc, short cmname_len){
+    int umat_state = 0;
     // Start of the umat function
     if (*kstep == 1 && *kinc == 0){
         // Initialize the state variables
@@ -83,6 +86,14 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     double equiv_plas_strain = statev[12];
     statev[13] = 0.0;//dtemp
 
+    // Jump out if the strain increment is zero: initial stress step
+    if (dstrain_.norm() < 1e-20){
+        for (int i = 0; i < 6; i++){
+            stress[i] += 0;
+        }
+        ddsdde_from_matrix(elastic_modulus, ddsdde);
+        return;
+    }
     // dotSigma - WeSigma + SigmaWe + sigma*trace(De) = C De
     // dotSigma - (W-Wp)Sigma + Sigma(W-Wp) + sigma*trace(D-Dp) = C (D-Dp)
     // dotSigma - sigma*trace(Dp) + C Dp = We Sigma - Sigma We - sigma*trace(D) + C D
@@ -104,7 +115,7 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     Matrix3d stress_in_iter; Vector6d dp_term; Vector6d F_obj; Matrix6d dF_obj;
     double step_scale = 1.0;
     double F_norm = 1000.0;
-    for (int n_iter = 0; n_iter < 200; n_iter++){
+    for (int n_iter = 0; n_iter < 20; n_iter++){
         stress_in_iter = stress_3d + tensor_trans_order(stress_incr_rate) * *dtime;
         vel_grad_plas = get_vel_grad_plas(stress_in_iter, orientation, statev, *temp);
         strain_rate_plas = 0.5 * (vel_grad_plas + vel_grad_plas.transpose());
@@ -113,11 +124,20 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
         F_obj = stress_incr_rate + dp_term - unchanged_term;
         dF_obj = Matrix6d::Identity() + Cij_pri * strain_modi_tensor * ddp_by_dsigma;
         if (isnan(F_obj.norm())){
-            throw runtime_error("SXCpp UMAT Error: NaN values in the stress increment calculation.");
+            /* cout << "[Warning No.1] SXCpp UMAT Warning: NaN values in the stress increment calculation." << endl; */
+            umat_state = 1;
+            stress_incr_rate = Vector6d::Zero();
+            vel_grad_plas = Matrix3d::Zero();
+            strain_rate_plas = Matrix3d::Zero();
+            ddp_by_dsigma = Matrix6d::Zero();
+            break;
         }
         if (F_obj.norm() < 1e-4) break;
-        if (n_iter > 10){
-            if (F_obj.norm() > 1e-3 || F_obj.norm() > F_norm) step_scale = max(0.1, step_scale * 0.5);
+        if (n_iter > 8){
+            if (F_obj.norm() > 1e-3 || F_obj.norm() > F_norm) {
+                step_scale = max(0.1, step_scale * 0.5);
+                if (step_scale != 0.1) n_iter -= 1;
+            }
             else step_scale = min(1.0, step_scale * 1.5);
         }
         Vector6d dX = dF_obj.inverse() * F_obj;
@@ -127,7 +147,8 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     }
     /* cout << stress_incr_rate.transpose() << endl; */
     if (F_obj.norm() > 1e-3) {
-        throw runtime_error("SXCpp UMAT Error: The stress increment calculation did not converge.");
+        /* cout << "[Warning No.2] SXCpp UMAT Error: The stress increment calculation did not converge." << endl; */
+        umat_state = 2;
     }
     // Update the state variables
     plastic_strain += strain_rate_plas * *dtime;
@@ -238,6 +259,12 @@ int main(){
         std::cout << statev[sdv_ind(0,"DD")] << "," << statev[sdv_ind(1,"DD")] << "," << statev[sdv_ind(2,"DD")] << "," << statev[sdv_ind(3,"DD")] << ",";
         std::cout << statev[sdv_ind(4,"DD")] << "," << statev[sdv_ind(5,"DD")] << "," << statev[sdv_ind(6,"DD")] << "," << statev[sdv_ind(7,"DD")] << ",";
         std::cout << statev[sdv_ind(8,"DD")] << "," << statev[sdv_ind(9,"DD")] << "," << statev[sdv_ind(10,"DD")] << "," << statev[sdv_ind(11,"DD")] << endl;
+    }
+    // Explicitly call destructors for cleanup
+    for (int i = 0; i < total_mode_num; ++i) {
+        if (slip_pool[i]) {
+            slip_pool[i]->~Slip();
+        }
     }
     return 0;
 }

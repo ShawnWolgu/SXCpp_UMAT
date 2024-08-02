@@ -4,13 +4,12 @@
 #define MAX_HARDEN_NUM 20
 #define MAX_LATENT_NUM 8
 
+#include <cstdio>
+#include <cstring>
 #include <Eigen/Eigen>
 #include <iostream>
-#include <fstream>
-#include <cstring>
-#include <memory>
-#include <array>
-#include <new>
+#include <stdexcept>
+#include <string>
 
 using namespace Eigen;
 using namespace std;

@@ -49,15 +49,16 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
         /* processPath(temp, "\\param.txt"); */
         /* ifstream cij(temp); */
 
-        ifstream cij("param.txt");
+        const char* file_name = "param.txt";
+        /* ifstream cij("param.txt"); */
         statev[0] = 0;
         statev[1] = 0;
         statev[2] = 0;
         statev[3] = statev[0]; statev[4] = statev[1]; statev[5] = statev[2]; // save the initial euler angle.
         if (total_mode_num == 0){
-            elastic_modulus_ref = read_elastic(cij);
-            lattice_vec = read_lattice(cij);
-            read_pmodes(cij);
+            elastic_modulus_ref = read_elastic(file_name);
+            lattice_vec = read_lattice(file_name);
+            read_pmodes(file_name);
             for (int pmode_id = 0; pmode_id < total_mode_num; pmode_id++){
                 mode_sys[pmode_id]->cal_shear_modulus(elastic_modulus_ref);
                 mode_sys[pmode_id]->initial_statev(statev);

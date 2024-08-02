@@ -49,9 +49,9 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
         int lenoutdir;
         getoutdir(temp, &lenoutdir, 200);
         processPath(temp, "\\param.txt");
-        ifstream cij(temp);
+        const char* file_name = temp;
 
-        const char* file_name = "param.txt";
+        /* const char* file_name = "param.txt"; */
         /* ifstream cij("param.txt"); */
         statev[0] = 0;
         statev[1] = 0;

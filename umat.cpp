@@ -39,8 +39,10 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
 	double* dfgrd1, int* noel, int* npt, int* layer, int* kspt,
 	int* kstep, int* kinc, short cmname_len){
     int umat_state = 0;
+    double temperature = *temp;
+    if (temperature == 0) temperature = 300;
     // Start of the umat function
-    if (*kstep == 1 && *kinc == 0){
+    if (*kstep == 1 && *kinc < 2){
         // Initialize the state variables
 
         /* char temp[200]; */
@@ -77,12 +79,11 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     Vector6d strain{{stran[0], stran[1], stran[2], stran[5]*0.5, stran[4]*0.5, stran[3]*0.5}};
     Vector6d dstrain_{{dstran[0], dstran[1], dstran[2], dstran[5]*0.5, dstran[4]*0.5, dstran[3]*0.5}};
     Vector6d stress_{{stress[0], stress[1], stress[2], stress[5], stress[4], stress[3]}};
-    Matrix3d spin_tensor{
+    Matrix3d d_rotation{
         {drot[0], drot[1], drot[2]}, 
         {drot[3], drot[4], drot[5]}, 
         {drot[6], drot[7], drot[8]}
     };
-    spin_tensor = spin_tensor/ *dtime;
     Matrix3d plastic_strain = tensor_trans_order(Vector6d{{statev[6], statev[7], statev[8], statev[9], statev[10], statev[11]}});
     double equiv_plas_strain = statev[12];
     statev[13] = 0.0;//dtemp
@@ -100,7 +101,7 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     // dotSigma - sigma*trace(Dp) + C Dp = We Sigma - Sigma We - sigma*trace(D) + C D
     Matrix3d spin_plas = Matrix3d::Zero();
     Matrix3d vel_grad_plas = Matrix3d::Zero();
-    Matrix3d spin_elas = spin_tensor - spin_plas;
+    Matrix3d spin_elas = d_rotation - spin_plas;
     Matrix3d strain_rate_plas = Matrix3d::Zero();
     Matrix3d strain_rate = tensor_trans_order(dstrain_) / *dtime;
     Matrix6d Cij_pri = get_C_ij_pri(elastic_modulus, stress_);
@@ -118,9 +119,9 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     double F_norm = 1000.0;
     for (int n_iter = 0; n_iter < 20; n_iter++){
         stress_in_iter = stress_3d + tensor_trans_order(stress_incr_rate) * *dtime;
-        vel_grad_plas = get_vel_grad_plas(stress_in_iter, orientation, statev, *temp);
+        vel_grad_plas = get_vel_grad_plas(stress_in_iter, orientation, statev, temperature);
         strain_rate_plas = 0.5 * (vel_grad_plas + vel_grad_plas.transpose());
-        ddp_by_dsigma = get_dp_grad(stress_in_iter, orientation, statev, *temp);
+        ddp_by_dsigma = get_dp_grad(stress_in_iter, orientation, statev, temperature);
         dp_term = Cij_pri * strain_modi_tensor * tensor_trans_order(strain_rate_plas);
         F_obj = stress_incr_rate + dp_term - unchanged_term;
         dF_obj = Matrix6d::Identity() + Cij_pri * strain_modi_tensor * ddp_by_dsigma;
@@ -154,19 +155,20 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     plastic_strain += strain_rate_plas * *dtime;
     Matrix3d elastic_strain = tensor_trans_order(strain) - plastic_strain;
     spin_plas = 0.5 * (vel_grad_plas - vel_grad_plas.transpose());
-    spin_elas = spin_tensor - spin_plas;
-    orientation = orientation * Rodrigues(spin_elas).transpose(); 
+    spin_elas = - spin_plas;
+    orientation = orientation * Rodrigues(spin_elas * *time).transpose(); 
+    orientation = d_rotation * orientation;
     Vector3d new_euler = Euler_trans(orientation);
     statev[0] = new_euler(0); statev[1] = new_euler(1); statev[2] = new_euler(2);
     Matrix3d stress_grain = tensor_rot_to_CryCoord(stress_in_iter, orientation);
     for (int pmode_id = 0; pmode_id < total_mode_num; pmode_id++){
-        mode_sys[pmode_id]->update_ssd(strain_rate, stress_grain, statev, *dtime, *temp);
+        mode_sys[pmode_id]->update_ssd(strain_rate, stress_grain, statev, *dtime, temperature);
     }
     /* for (int pmode_id = 0; pmode_id < total_mode_num; pmode_id++){ */
     /*     mode_sys[pmode_id]->update_rho_hard(statev, *dtime, *temp); */
     /* } */
     for (int pmode_id = 0; pmode_id < total_mode_num; pmode_id++){
-        mode_sys[pmode_id]->update_status(orientation, elastic_strain, *dtime, *temp, statev);
+        mode_sys[pmode_id]->update_status(orientation, elastic_strain, *dtime, temperature, statev);
     }
     stress_ = tensor_trans_order(stress_in_iter);
     Vector6d sigma_out = change_basis_order(stress_);
@@ -177,6 +179,12 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     Matrix6d modulus_eff = stiffness_eff.inverse();
     Matrix6d C_ijkl = change_basis_order(modulus_eff);
     ddsdde_from_matrix(C_ijkl, ddsdde);
+    Vector6d pe_vec = tensor_trans_order(plastic_strain);
+    statev[6] = pe_vec(0); statev[7] = pe_vec(1); statev[8] = pe_vec(2);
+    statev[9] = pe_vec(3); statev[10] = pe_vec(4); statev[11] = pe_vec(5);
+    equiv_plas_strain = calc_equivalent_value(plastic_strain);
+    statev[12] = equiv_plas_strain;
+    statev[13] = 0.0;//dtemp
 }
 
 int main(){

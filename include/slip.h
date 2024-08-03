@@ -265,21 +265,21 @@ inline void Slip::initial_statev(double* statev){
         return;
     }
     if (flag_harden == 0) {
-        statev[sdv_ind(num, "SR")] = 0.0;
+        statev[sdv_ind(num, "SSR")] = 0.0;
         statev[sdv_ind(num, "slope")] = 0.0;
         statev[sdv_ind(num, "ACC")] = 0.0;
         statev[sdv_ind(num, "CRSS")] = harden_params[0];
         statev[sdv_ind(num, "custom")] = 0.0;
     } 
     else if (flag_harden == 1) {
-        statev[sdv_ind(num, "SR")] = 0.0;
+        statev[sdv_ind(num, "SSR")] = 0.0;
         statev[sdv_ind(num, "slope")] = 0.0;
         statev[sdv_ind(num, "DD")] = rho_init;
         statev[sdv_ind(num, "tauf")] = harden_params[8] * shear_modulus * burgers_vec.norm() * 1e-10 * sqrt(rho_init*total_mode_num);
         statev[sdv_ind(num, "mfp")] = harden_params[1]/sqrt(rho_init*total_mode_num)*total_mode_num;
     }
     else {
-        statev[sdv_ind(num, "SR")] = 0.0;
+        statev[sdv_ind(num, "SSR")] = 0.0;
         statev[sdv_ind(num, "slope")] = 0.0;
         statev[sdv_ind(num, "ACC")] = 0.0;
         statev[sdv_ind(num, "CRSS")] = harden_params[0];

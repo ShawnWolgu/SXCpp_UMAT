@@ -413,5 +413,9 @@ inline int sdv_ind(int slip_num, string sdv_name){
     else if (sdv_name == "tauf") return start + 3;
     else if (sdv_name == "custom") return start + 4;
     else if (sdv_name == "mfp") return start + 4;
-    else return -1;
+    else {
+        cout << "Error: Unknown state variable name " << sdv_name << endl;
+        throw runtime_error("Unknown state variable name");
+        return -1;
+    }
 }

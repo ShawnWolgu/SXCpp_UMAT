@@ -196,15 +196,19 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     }
     //
     // Update the state variables
-    cout << "pe_frac: " << calc_equivalent_value(strain_rate_plas)/calc_equivalent_value(strain_rate) << endl;
+    /* cout << "pe_frac: " << calc_equivalent_value(strain_rate_plas)/calc_equivalent_value(strain_rate) << endl; */
     plastic_strain += strain_rate_plas * *dtime;
     Matrix3d elastic_strain = tensor_trans_order(strain) - plastic_strain;
     spin_plas = 0.5 * (vel_grad_plas - vel_grad_plas.transpose());
     spin_elas = - spin_plas;
+    Matrix3d orientation_G = Euler_trans(statev[3], statev[4], statev[5]);
+    Matrix3d rot_matrix = d_rotation * orientation_G * orientation.transpose();
     orientation = orientation * Rodrigues(spin_elas * *time).transpose(); 
-    orientation = d_rotation * orientation;
     Vector3d new_euler = Euler_trans(orientation);
     statev[0] = new_euler(0); statev[1] = new_euler(1); statev[2] = new_euler(2);
+    orientation_G = rot_matrix * orientation;
+    new_euler = Euler_trans(orientation_G);
+    statev[3] = new_euler(0); statev[4] = new_euler(1); statev[5] = new_euler(2);
     Matrix3d stress_grain = tensor_rot_to_CryCoord(stress_in_iter, orientation);
     for (int pmode_id = 0; pmode_id < total_mode_num; pmode_id++){
         mode_sys[pmode_id]->update_ssd(strain_rate, stress_grain, statev, *dtime, temperature);
@@ -309,7 +313,7 @@ int main(){
         // Print the results for this step
         std::cout << stran[0] << "," << stran[1] << "," << stran[2] << "," << stran[3] << "," << stran[4] << "," << stran[5] << ",";
         std::cout << stress[0] << "," << stress[1] << "," << stress[2] << "," << stress[3] << "," << stress[4] << "," << stress[5] << ",";
-        std::cout << statev[0] << "," << statev[1] << "," << statev[2] << "," ;
+        std::cout << statev[0] << "," << statev[1] << "," << statev[2] << "," << statev[12] << ",";
         std::cout << statev[sdv_ind(0,"DD")] << "," << statev[sdv_ind(1,"DD")] << "," << statev[sdv_ind(2,"DD")] << "," << statev[sdv_ind(3,"DD")] << ",";
         std::cout << statev[sdv_ind(4,"DD")] << "," << statev[sdv_ind(5,"DD")] << "," << statev[sdv_ind(6,"DD")] << "," << statev[sdv_ind(7,"DD")] << ",";
         std::cout << statev[sdv_ind(8,"DD")] << "," << statev[sdv_ind(9,"DD")] << "," << statev[sdv_ind(10,"DD")] << "," << statev[sdv_ind(11,"DD")] << endl;

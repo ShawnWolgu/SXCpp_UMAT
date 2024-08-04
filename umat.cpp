@@ -114,44 +114,89 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     // Calculate the stress increment and ddsdde
     Vector6d stress_incr_rate = elastic_modulus * strain_modi_tensor * tensor_trans_order(strain_rate);
     Matrix6d ddp_by_dsigma = Matrix6d::Zero();
-    Matrix3d stress_in_iter; Vector6d dp_term; Vector6d F_obj; Matrix6d dF_obj;
+    Matrix3d stress_in_iter; Vector6d dp_term; Vector6d F_obj, dX; Matrix6d dF_obj;
     double step_scale = 1.0;
     double F_norm = 1000.0;
-    for (int n_iter = 0; n_iter < 20; n_iter++){
-        stress_in_iter = stress_3d + tensor_trans_order(stress_incr_rate) * *dtime;
-        vel_grad_plas = get_vel_grad_plas(stress_in_iter, orientation, statev, temperature);
-        strain_rate_plas = 0.5 * (vel_grad_plas + vel_grad_plas.transpose());
-        ddp_by_dsigma = get_dp_grad(stress_in_iter, orientation, statev, temperature);
-        dp_term = Cij_pri * strain_modi_tensor * tensor_trans_order(strain_rate_plas);
-        F_obj = stress_incr_rate + dp_term - unchanged_term;
-        dF_obj = Matrix6d::Identity() + Cij_pri * strain_modi_tensor * ddp_by_dsigma;
-        if (isnan(F_obj.norm())){
-            /* cout << "[Warning No.1] SXCpp UMAT Warning: NaN values in the stress increment calculation." << endl; */
-            umat_state = 1;
-            stress_incr_rate = Vector6d::Zero();
-            vel_grad_plas = Matrix3d::Zero();
-            strain_rate_plas = Matrix3d::Zero();
-            ddp_by_dsigma = Matrix6d::Zero();
-            break;
-        }
-        if (F_obj.norm() < 1e-4) break;
-        if (n_iter > 8){
-            if (F_obj.norm() > 1e-3 || F_obj.norm() > F_norm) {
-                step_scale = max(0.1, step_scale * 0.5);
-                if (step_scale != 0.1) n_iter -= 1;
+    int iteration_num = 0;
+
+    //iteration: Newton-Raphson method
+    do{
+        for (int n_iter = 0; n_iter < 5; n_iter++) {
+            stress_in_iter = stress_3d + tensor_trans_order(stress_incr_rate) * *dtime;
+            vel_grad_plas = get_vel_grad_plas(stress_in_iter, orientation, statev, temperature);
+            strain_rate_plas = 0.5 * (vel_grad_plas + vel_grad_plas.transpose());
+            ddp_by_dsigma = get_dp_grad(stress_in_iter, orientation, statev, temperature);
+            dp_term = Cij_pri * strain_modi_tensor * tensor_trans_order(strain_rate_plas);
+            F_obj = stress_incr_rate + dp_term - unchanged_term;
+            dF_obj = Matrix6d::Identity() + Cij_pri * strain_modi_tensor * ddp_by_dsigma;
+            F_norm = F_obj.norm();
+            if (std::isnan(F_norm)) {
+                cout << "[NaN]" << endl;
+                umat_state = 1;
+                stress_incr_rate = elastic_modulus * strain_modi_tensor * tensor_trans_order(strain_rate);
+                vel_grad_plas = Matrix3d::Zero();
+                strain_rate_plas = Matrix3d::Zero();
+                ddp_by_dsigma = Matrix6d::Zero();
+                break;
             }
-            else step_scale = min(1.0, step_scale * 1.5);
+            if (F_norm < CRITERION_CONV) break;
+            dX = dF_obj.inverse() * F_obj;
+            stress_incr_rate -= dX;
+            if (dX.norm() / stress_incr_rate.norm() < 1e-4) break;
+            /* cout << "NR iter: " << n_iter << " F_norm: " << F_norm << endl; */
         }
-        Vector6d dX = dF_obj.inverse() * F_obj;
-        stress_incr_rate -= dX * step_scale;
-        /* cout << "--" << stress_incr_rate.transpose() << "," << F_obj.norm() << "," << step_scale << endl; */
-        F_norm = F_obj.norm();
-    }
-    if (F_obj.norm() > 1e-3) {
-        /* cout << "[Warning No.2] SXCpp UMAT Error: The stress increment calculation did not converge." << endl; */
+        if (F_norm < CRITERION_CONV) break;
+
+        bool downhill_converged = false;
+        double initial_F_norm = F_obj.norm();
+        double current_F_norm = initial_F_norm;
+        step_scale = 1;
+        for (int downhill_iter = 0; downhill_iter < 20; downhill_iter++) {
+            if (current_F_norm < 1e-4) {
+                downhill_converged = true;
+                break;
+            }
+            stress_in_iter = stress_3d + tensor_trans_order(stress_incr_rate) * *dtime;
+            vel_grad_plas = get_vel_grad_plas(stress_in_iter, orientation, statev, temperature);
+            strain_rate_plas = 0.5 * (vel_grad_plas + vel_grad_plas.transpose());
+            ddp_by_dsigma = get_dp_grad(stress_in_iter, orientation, statev, temperature);
+            dp_term = Cij_pri * strain_modi_tensor * tensor_trans_order(strain_rate_plas);
+            F_obj = stress_incr_rate + dp_term - unchanged_term;
+            current_F_norm = F_obj.norm();
+            dF_obj = Matrix6d::Identity() + Cij_pri * strain_modi_tensor * ddp_by_dsigma;
+            if (std::isnan(current_F_norm)) {
+                cout << "[NaN]" << endl;
+                umat_state = 1;
+                stress_incr_rate = elastic_modulus * strain_modi_tensor * tensor_trans_order(strain_rate);
+                vel_grad_plas = Matrix3d::Zero();
+                strain_rate_plas = Matrix3d::Zero();
+                ddp_by_dsigma = Matrix6d::Zero();
+                break;
+            }
+            if (current_F_norm < initial_F_norm) {
+                step_scale = std::min(1.0, step_scale * 1.2);
+                initial_F_norm = current_F_norm;
+                dX = dF_obj.inverse() * F_obj;
+                stress_incr_rate -= dX * step_scale;
+            } else {
+                stress_incr_rate += dX * step_scale * 0.5;
+                step_scale = step_scale * 0.5;
+            }
+            if (dX.norm()*step_scale / stress_incr_rate.norm() < 1e-4) break;
+            /* cout << "Downhill iter: " << downhill_iter << " F_norm: " << current_F_norm << endl; */
+        }
+        /* cout << F_obj.norm() << endl; */
+        ++iteration_num;
+    } while (F_norm > CRITERION_CONV && iteration_num < MAX_ITER_NUM);
+
+    if (F_obj.norm() > 10*CRITERION_CONV) {
+        cout << "[Warning No.2] SXCpp UMAT Error: The stress increment calculation did not converge." << endl;
+        cout << "F_obj: " << F_obj.norm() << endl;
         umat_state = 2;
     }
+    //
     // Update the state variables
+    cout << "pe_frac: " << calc_equivalent_value(strain_rate_plas)/calc_equivalent_value(strain_rate) << endl;
     plastic_strain += strain_rate_plas * *dtime;
     Matrix3d elastic_strain = tensor_trans_order(strain) - plastic_strain;
     spin_plas = 0.5 * (vel_grad_plas - vel_grad_plas.transpose());
@@ -201,6 +246,7 @@ int main(){
     int ndi = 0, nshr = 0, ntens = 0, nstatv = 13, nprops = 0;
     double props[4] = {10, 10, 10, 0.5};
     double coords[3] = {0}, drot[9] = {0}, pnewdt = 0, celent = 0, dfgrd0[3] = {0}, dfgrd1[3] = {0};
+    drot[0] = 1, drot[4] = 1, drot[8] = 1;
     int noel = 0, npt = 0, layer = 0, kspt = 0, kstep = 1, kinc = 0;
     short cmname_len = 0;
 

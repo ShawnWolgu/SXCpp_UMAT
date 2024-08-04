@@ -65,4 +65,3 @@ inline void initialization_interaction(){
     cout << "lat_hard_mat:" << endl;
     cout << lat_hard_mat << endl;
 }
-

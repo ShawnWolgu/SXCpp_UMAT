@@ -7,12 +7,15 @@
 #include "include/slip.h"
 #include <math.h>
 #include <stdlib.h>
+#include <chrono>
+#include <thread>
 
 using namespace std;
 using namespace Eigen;
 
 //global variables
 int flag_harden, total_mode_num;
+bool lock_read=false, lock_wait=true;
 Matrix3d lattice_vec;
 Matrix6d elastic_modulus_ref;
 Matrix6d strain_modi_tensor{
@@ -57,7 +60,8 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
         statev[1] = 0;
         statev[2] = 0;
         statev[3] = statev[0]; statev[4] = statev[1]; statev[5] = statev[2]; // save the initial euler angle.
-        if (total_mode_num == 0){
+        if (total_mode_num == 0 && lock_read == false){
+            lock_read = true;
             elastic_modulus_ref = read_elastic(file_name);
             lattice_vec = read_lattice(file_name);
             read_pmodes(file_name);
@@ -66,8 +70,12 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
                 mode_sys[pmode_id]->initial_statev(statev);
             }
             initialization_interaction();
+            lock_wait = false;
         }
         else {
+            if (lock_wait){
+                this_thread::sleep_for(chrono::milliseconds(10));
+            }
             for (int pmode_id = 0; pmode_id < total_mode_num; pmode_id++){
                 mode_sys[pmode_id]->initial_statev(statev);
             }
@@ -188,7 +196,7 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
         ++iteration_num;
     } while (F_norm > CRITERION_CONV && iteration_num < MAX_ITER_NUM);
 
-    if (F_obj.norm() > 10*CRITERION_CONV) {
+    if (F_obj.norm() > 50*CRITERION_CONV) {
         cout << "[Warning No.2] SXCpp UMAT Error: The stress increment calculation did not converge." << endl;
         cout << "F_obj: " << F_obj.norm() << endl;
         umat_state = 2;
@@ -223,7 +231,7 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     for (int i = 0; i < 6; i++){
         stress[i] = sigma_out(i);
     }
-    Matrix6d stiffness_eff = elastic_modulus.inverse() + ddp_by_dsigma;
+    Matrix6d stiffness_eff = elastic_modulus.inverse() + ddp_by_dsigma * strain_modi_tensor;
     Matrix6d modulus_eff = stiffness_eff.inverse();
     Matrix6d C_ijkl = change_basis_order(modulus_eff);
     ddsdde_from_matrix(C_ijkl, ddsdde);

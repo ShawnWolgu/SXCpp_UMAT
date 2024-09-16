@@ -5,7 +5,7 @@
 #define MAX_LATENT_NUM 8
 
 #define CRITERION_CONV 1e-4
-#define MAX_ITER_NUM 20
+#define MAX_ITER_NUM 100
 
 #include <cstdio>
 #include <cstring>
@@ -42,3 +42,5 @@ extern LatentMat lat_hard_mat;
 extern LatentMat interaction_mat;
 extern PMode* mode_sys[];
 extern Slip slip_array[];
+extern bool lock_read, lock_wait;
+

@@ -118,7 +118,7 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     Vector6d stress_incr_rate = elastic_modulus * strain_modi_tensor * tensor_trans_order(strech);
     Matrix3d stress_3d = tensor_trans_order(stress_);
     Matrix6d ddp_by_dsigma = Matrix6d::Zero();
-    Matrix6x3d dwp_by_dsigma = Matrix6x3d::Zero();
+    Matrix3x6d dwp_by_dsigma = Matrix3x6d::Zero();
     Matrix3d stress_in_iter; Vector6d dp_term, wp_term, F_obj, dX; Matrix6d dF_obj;
     do{
         for (int n_iter = 0; n_iter < 5; n_iter++) {

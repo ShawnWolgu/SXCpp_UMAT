@@ -23,17 +23,40 @@ inline Matrix6d get_dp_grad(Matrix3d &stress_3d, Matrix3d &orientation, double* 
         dp_grad += mode_sys[crt_mode_idx]->ddp_dsigma(slip_ddgamma_dtau);
         statev[sdv_ind(crt_mode_idx, "slope")] = slip_ddgamma_dtau;
     }
-    return rotate_6d_compl_modu(dp_grad, orientation.transpose());
+    return strain_modi_tensor.inverse() * rotate_6d_compl_modu(dp_grad, orientation.transpose());
 }
 
-inline Matrix6d get_wp_grad(Matrix3d &orientation, double* statev){
+inline Matrix3x6d get_wp_grad(Matrix3d &orientation, double* statev){
     double slip_ddgamma_dtau = 0;
-    Matrix6d dw_grad = Matrix6d::Zero();
+    Matrix6d wp_grad = Matrix6d::Zero();
     for (int crt_mode_idx = 0; crt_mode_idx < total_mode_num; ++crt_mode_idx){
         slip_ddgamma_dtau = statev[sdv_ind(crt_mode_idx, "slope")];
-        dw_grad += mode_sys[crt_mode_idx]->ddp_dsigma(slip_ddgamma_dtau);
+        wp_grad += mode_sys[crt_mode_idx]->ddp_dsigma(slip_ddgamma_dtau);
     }
-    return rotate_6d_compl_modu(dw_grad, orientation.transpose());
+    Matrix6d return_mat = strain_modi_tensor.inverse() * rotate_6d_compl_modu(wp_grad, orientation.transpose());
+    return return_mat(Eigen::seq(3,last),all);
+}
+
+inline Matrix6d cal_ddEp_ddE(Matrix3d strech_plas, Vector6d dstrain, double *dtime){
+    Matrix6d ddEp_ddE = Matrix6d::Zero();
+    Vector6d dstrain_plas = tensor_trans_order(strech_plas) * *dtime;
+    for (int i = 0; i < 6; i++){
+        for (int j = 0; j < 6; j++){
+            ddEp_ddE(i,j) = dstrain_plas(j)/dstrain(i);
+        }
+    }
+    return ddEp_ddE;
+}
+
+inline Matrix3x6d cal_dWdt_ddE(Matrix3d spin, Vector6d dstrain, double *dtime){
+    Matrix3x6d dWdt_ddE = Matrix3x6d::Zero();
+    Vector3d spin_dt_plas = tensor_trans_order_spin(spin) * *dtime;
+    for (int i = 0; i < 6; i++){
+        for (int j = 0; j < 3; j++){
+            dWdt_ddE(i,j) = spin_dt_plas(j)/dstrain(i);
+        }
+    }
+    return dWdt_ddE;
 }
 
 inline void initialization_interaction(){

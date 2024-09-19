@@ -5,7 +5,7 @@
 #define MAX_LATENT_NUM 8
 
 #define CRITERION_CONV 1e-4
-#define MAX_ITER_NUM 100
+#define MAX_ITER_NUM 10
 
 #include <cstdio>
 #include <cstring>
@@ -27,6 +27,8 @@ typedef Matrix<double, 6, 6> Matrix6d;
 typedef Matrix<double, MAX_HARDEN_NUM, 1> HardenVec;
 typedef Matrix<double, MAX_LATENT_NUM, 1> LatentVec;
 typedef Matrix<double, MAX_MODE_NUM, MAX_MODE_NUM> LatentMat;
+typedef Matrix<double, 6, 3> Matrix6x3d;
+typedef Matrix<double, 3, 6> Matrix3x6d;
 
 class Grain;
 class PMode;

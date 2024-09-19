@@ -266,11 +266,30 @@ inline Matrix3d tensor_trans_order_9(Matrix<double,9,1> tensor){
     return Matrix3d{{tensor(0), tensor(5), tensor(4)}, {tensor(8), tensor(1), tensor(3)}, {tensor(7), tensor(6), tensor(2)}};
 }
 
+inline Vector3d tensor_trans_order_spin(Matrix3d tensor){
+    /** 
+     * 3*3 Matrix --> 3*1 Vector: [23, 13, 12]
+     */
+    return Vector3d{{tensor(1,2), tensor(0,2), tensor(0,1)}};
+}
+
 inline Matrix6d get_C_ij_pri(Matrix6d elastic_modulus, Vector6d &stress_6d){
     Matrix6d C_ij_pri;
     C_ij_pri << stress_6d, stress_6d, stress_6d, Vector6d::Zero(), Vector6d::Zero(), Vector6d::Zero();
     C_ij_pri = elastic_modulus - C_ij_pri;
     return C_ij_pri;
+}
+
+inline Matrix6x3d get_Sigma_jaumann(Vector6d s){
+    // s = [s11, s22, s33, s23, s13, s12], Cauchy stress
+    Matrix6x3d Sigma_jaumann;
+    Sigma_jaumann <<    0, 2*s(4), 2*s(5),
+                   2*s(3),      0,-2*s(5),
+                  -2*s(3),-2*s(4),      0,
+                     s(2)-s(1), -s(5), -s(4),
+                    -s(5),  s(2)-s(0),  s(3),
+                     s(4), -s(3),  s(1)-s(0);
+    return Sigma_jaumann;
 }
 
 inline Matrix3d Rodrigues(Matrix3d spin_elas){
@@ -287,6 +306,17 @@ inline Matrix3d Rodrigues(Matrix3d spin_elas){
         exp_skew =  Matrix3d::Identity()+ term_1 + term_2;
     }
     return exp_skew;
+}
+
+inline Matrix3d drot_to_spin(double* drot, double* dtime){
+    Matrix3d d_rot_matrix{
+        {drot[0], drot[1], drot[2]}, 
+        {drot[3], drot[4], drot[5]}, 
+        {drot[6], drot[7], drot[8]}
+    };
+    Matrix3d temp = (d_rot_matrix - Matrix3d::Identity()) * (d_rot_matrix + Matrix3d::Identity()).inverse();
+    Matrix3d spin = 2 * temp / *dtime;
+    return spin;
 }
 
 inline Matrix3d tensor_rot_to_CryCoord(Matrix3d tensor, Matrix3d orientation){

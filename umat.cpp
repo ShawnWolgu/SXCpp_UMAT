@@ -243,6 +243,11 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     Matrix6d Jacobian = C_pri * strain_modi_tensor - C_pri * strain_modi_tensor * d_deps_plas_d_deps + 
                         Sigma_Jaumann * d_wdt_d_deps - Sigma_Jaumann * d_wpdt_plas_d_deps;
     Jacobian = Jacobian * strain_modi_tensor.inverse();
-    Matrix6d modulus_eff = change_basis_order(Jacobian);
+    Matrix6d modulus_eff = change_basis_order(Jacobian) / (1+dstrain_(0)+dstrain_(1)+dstrain_(2));
+    for (int i = 0; i < 6; i++){
+        for (int j = 0; j < 3; j++){
+            modulus_eff(i,j) = modulus_eff(i,j) - stress_(i);
+        }
+    }
     ddsdde_from_matrix(modulus_eff, ddsdde);
 }

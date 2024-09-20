@@ -343,7 +343,7 @@ inline double Slip::disl_velocity_grad(double rss, double burgers, double temper
     double forest_stress = statev[sdv_ind(num, "tauf")];
     double stress_eff = abs(rss) - forest_stress;
     double dvel_dtau = 0.0;
-    if (stress_eff >= 1000000) {
+    if (stress_eff >= 0.0) {
         t_wait = waiting_time(stress_eff, resistance_slip, act_energy_r,
                               frequency_r, energy_expo, temperature);
         t_run = running_time(stress_eff, c_drag, speed_sat, mean_free_path, burgers,

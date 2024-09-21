@@ -5,7 +5,7 @@
 #define MAX_LATENT_NUM 8
 
 #define CRITERION_CONV 1e-4
-#define MAX_ITER_NUM 10
+#define MAX_ITER_NUM 20
 
 #include <cstdio>
 #include <cstring>

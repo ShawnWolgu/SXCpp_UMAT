@@ -240,7 +240,7 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     Matrix6d d_deps_plas_d_deps = cal_ddEp_ddE(strech_plas, dstrain_, dtime);
     Matrix3x6d d_wpdt_plas_d_deps = cal_dWdt_ddE(spin_plas, dstrain_, dtime);
     Matrix3x6d d_wdt_d_deps = cal_dWdt_ddE(spin, dstrain_, dtime);
-    Matrix6d Jacobian = (Matrix6d::Identity() + C_pri * strain_modi_tensor * ddp_by_dsigma + Sigma_Jaumann * dwp_by_dsigma).inverse() *
+    Matrix6d Jacobian = (Matrix6d::Identity() + C_pri * strain_modi_tensor * ddp_by_dsigma * *dtime + Sigma_Jaumann * dwp_by_dsigma * *dtime).inverse() *
                         (C_pri * strain_modi_tensor);
     /* Matrix6d Jacobian = C_pri * strain_modi_tensor - C_pri * strain_modi_tensor * d_deps_plas_d_deps +  */
     /*                     Sigma_Jaumann * d_wdt_d_deps - Sigma_Jaumann * d_wpdt_plas_d_deps; */

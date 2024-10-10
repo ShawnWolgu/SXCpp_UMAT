@@ -91,11 +91,18 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     statev[13] = 0.0;//dtemp
     // Jump out if the strain increment is zero: initial stress step
     if (dstrain_.norm() < 1e-20){
-        for (int i = 0; i < 6; i++){
-            stress[i] += 0;
+        if (*kstep == 1){
+            for (int i = 0; i < 6; i++){
+                stress[i] += 0;
+            }
+            ddsdde_from_matrix(elastic_modulus, ddsdde);
+            return;
         }
-        ddsdde_from_matrix(elastic_modulus, ddsdde);
-        return;
+        else{
+            dstrain_[0] = 1e-20;
+            dstrain_[1] = 1e-20;
+            dstrain_[2] = 1e-20;
+        }
     }
     // dotSigma - WeSigma + SigmaWe + sigma*trace(De) = C De
     // dotSigma - (W-Wp)Sigma + Sigma(W-Wp) + sigma*trace(D-Dp) = C (D-Dp)
@@ -136,7 +143,18 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
 
             F_norm = F_obj.norm();
             if (std::isnan(F_norm)) {
-                cout << "[NaN]" << endl;
+                if (*noel == 2000 && *npt == 1){
+                    cout << "NAN detected in the iteration process." << endl;
+                    cout << "KSTEP: " << *kstep << " KINC: " << *kinc << endl;
+                    cout << "Strecth: " << strech << endl;
+                    cout << "Spin: " << spin << endl;
+                    cout << "Stress: " << stress_3d << endl;
+                    cout << "Stress_incr_rate: " << stress_incr_rate << endl;
+                    for (int pmode_id = 0; pmode_id < total_mode_num; pmode_id++){
+                        int statev_id = sdv_ind(pmode_id, "SSR");
+                        cout << "Mode " << pmode_id << " SSR: " << statev[statev_id] << endl;
+                    }
+                }
                 umat_state = 1;
                 stress_incr_rate = elastic_modulus * strain_modi_tensor * tensor_trans_order(strech);
                 vel_grad_plas = Matrix3d::Zero();
@@ -151,6 +169,7 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
             /* cout << "NR iter: " << n_iter << " F_norm: " << F_norm << endl; */
         }
         if (F_norm < CRITERION_CONV) break;
+        if (umat_state != 0) break;
 
         bool downhill_converged = false;
         double initial_F_norm = F_obj.norm();
@@ -175,7 +194,18 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
 
             current_F_norm = F_obj.norm();
             if (std::isnan(current_F_norm)) {
-                cout << "[NaN]" << endl;
+                if (*noel == 2000 && *npt == 1){
+                    cout << "NAN detected in the iteration process." << endl;
+                    cout << "KSTEP: " << *kstep << " KINC: " << *kinc << endl;
+                    cout << "Strecth: " << strech << endl;
+                    cout << "Spin: " << spin << endl;
+                    cout << "Stress: " << stress_3d << endl;
+                    cout << "Stress_incr_rate: " << stress_incr_rate << endl;
+                    for (int pmode_id = 0; pmode_id < total_mode_num; pmode_id++){
+                        int statev_id = sdv_ind(pmode_id, "SSR");
+                        cout << "Mode " << pmode_id << " SSR: " << statev[statev_id] << endl;
+                    }
+                }
                 umat_state = 1;
                 stress_incr_rate = elastic_modulus * strain_modi_tensor * tensor_trans_order(strech);
                 vel_grad_plas = Matrix3d::Zero();
@@ -196,12 +226,13 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
             /* cout << "Downhill iter: " << downhill_iter << " F_norm: " << current_F_norm << endl; */
         }
         /* cout << F_obj.norm() << endl; */
+        if (umat_state != 0) break;
         ++iteration_num;
     } while (F_norm > CRITERION_CONV && iteration_num < MAX_ITER_NUM);
 
     if (F_obj.norm() > 100*CRITERION_CONV) {
-        cout << "[Warning No.2] SXCpp UMAT Error: The stress increment calculation did not converge." << endl;
-        cout << "F_obj: " << F_obj.norm() << endl;
+        /* cout << "[Warning No.2] SXCpp UMAT Error: The stress increment calculation did not converge." << endl; */
+        /* cout << "F_obj: " << F_obj.norm() << endl; */
         umat_state = 2;
     }
 
@@ -252,4 +283,5 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
         }
     }
     ddsdde_from_matrix(modulus_eff, ddsdde);
+    return;
 }

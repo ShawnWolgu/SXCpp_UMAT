@@ -449,3 +449,16 @@ inline int sdv_ind(int slip_num, string sdv_name){
         return -1;
     }
 }
+
+inline void debug_info(int *kstep, int *kinc, Matrix3d strech, Matrix3d spin, Matrix3d stress_3d, Vector6d stress_incr_rate, double *statev, int total_mode_num){
+    cout << "Print debug information" << endl;
+    cout << "KSTEP: " << *kstep << " KINC: " << *kinc << endl;
+    cout << "Strecth: " << strech << endl;
+    cout << "Spin: " << spin << endl;
+    cout << "Stress: " << stress_3d << endl;
+    cout << "Stress_incr_rate: " << stress_incr_rate.transpose() << endl;
+    for (int pmode_id = 0; pmode_id < total_mode_num; pmode_id++){
+        int statev_id = sdv_ind(pmode_id, "SSR");
+        cout << "Mode " << pmode_id << " SSR: " << statev[statev_id] << " DD: " << statev[statev_id + 2] << endl;
+    }
+}

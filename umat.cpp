@@ -109,59 +109,56 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     // dotSigma = C'D + S'W - C'Dp - S'Wp
     Matrix6d C_pri = get_C_ij_pri(elastic_modulus, stress_); //C'
     Matrix6x3d Sigma_Jaumann = get_Sigma_jaumann(stress_); //S'
-    Matrix3d strech = tensor_trans_order(dstrain_) / *dtime;
+    Matrix3d stretch = tensor_trans_order(dstrain_) / *dtime;
     Matrix3d spin = drot_to_spin(drot, dtime);
-    Vector6d unchange_term = C_pri * strain_modi_tensor * tensor_trans_order(strech) +
+    Vector6d unchange_term = C_pri * strain_modi_tensor * tensor_trans_order(stretch) +
                              Sigma_Jaumann * tensor_trans_order_spin(spin);
 
     Matrix3d spin_plas = Matrix3d::Zero();
     Matrix3d vel_grad_plas = Matrix3d::Zero();
     Matrix3d spin_elas = spin - spin_plas;
-    Matrix3d strech_plas = Matrix3d::Zero();
+    Matrix3d stretch_plas = Matrix3d::Zero();
 
     //iteration: Newton-Raphson method
     int iteration_num = 0;
     double step_scale = 1.0, F_norm = 1000.0;
-    Vector6d stress_incr_rate = elastic_modulus * strain_modi_tensor * tensor_trans_order(strech);
+    Vector6d stress_incr_rate = elastic_modulus * strain_modi_tensor * tensor_trans_order(stretch);
     Matrix3d stress_3d = tensor_trans_order(stress_);
     Matrix6d ddp_by_dsigma = Matrix6d::Zero();
     Matrix3x6d dwp_by_dsigma = Matrix3x6d::Zero();
     Matrix3d stress_in_iter; Vector6d dp_term, wp_term, F_obj, dX; Matrix6d dF_obj;
+    int ncycle = 0;
+
     do{
+        ncycle += 1;
         for (int n_iter = 0; n_iter < 5; n_iter++) {
             stress_in_iter = stress_3d + tensor_trans_order(stress_incr_rate) * *dtime;
             vel_grad_plas = get_vel_grad_plas(stress_in_iter, orientation, statev, temperature);
-            strech_plas = 0.5 * (vel_grad_plas + vel_grad_plas.transpose());
+            stretch_plas = 0.5 * (vel_grad_plas + vel_grad_plas.transpose());
             spin_plas = 0.5 * (vel_grad_plas - vel_grad_plas.transpose());
-            dp_term = C_pri * strain_modi_tensor * tensor_trans_order(strech_plas);
+            dp_term = C_pri * strain_modi_tensor * tensor_trans_order(stretch_plas);
             wp_term = Sigma_Jaumann * tensor_trans_order_spin(spin_plas);
             F_obj = stress_incr_rate + dp_term + wp_term - unchange_term;
 
             ddp_by_dsigma = get_dp_grad(stress_in_iter, orientation, statev, temperature);
             dwp_by_dsigma = get_wp_grad(orientation, statev);
             dF_obj = Matrix6d::Identity() + C_pri * strain_modi_tensor * ddp_by_dsigma + Sigma_Jaumann * dwp_by_dsigma;
-
             F_norm = F_obj.norm();
+
+            if (*kstep==2 && *kinc < 5 && *noel == 2000 && *npt == 1){
+                cout << "NCycle:" << ncycle << " NR_iter: " << n_iter << endl;
+                debug_info(kstep, kinc, stretch, spin, stress_3d, stress_incr_rate, statev, total_mode_num);
+            }
+
             if (std::isnan(F_norm)) {
-                if (*noel == 2000 && *npt == 1){
-                    cout << "NAN detected in the iteration process." << endl;
-                    cout << "KSTEP: " << *kstep << " KINC: " << *kinc << endl;
-                    cout << "Strecth: " << strech << endl;
-                    cout << "Spin: " << spin << endl;
-                    cout << "Stress: " << stress_3d << endl;
-                    cout << "Stress_incr_rate: " << stress_incr_rate << endl;
-                    for (int pmode_id = 0; pmode_id < total_mode_num; pmode_id++){
-                        int statev_id = sdv_ind(pmode_id, "SSR");
-                        cout << "Mode " << pmode_id << " SSR: " << statev[statev_id] << endl;
-                    }
-                }
                 umat_state = 1;
-                stress_incr_rate = elastic_modulus * strain_modi_tensor * tensor_trans_order(strech);
+                stress_incr_rate = elastic_modulus * strain_modi_tensor * tensor_trans_order(stretch);
                 vel_grad_plas = Matrix3d::Zero();
-                strech_plas = Matrix3d::Zero();
+                stretch_plas = Matrix3d::Zero();
                 ddp_by_dsigma = Matrix6d::Zero();
                 break;
             }
+
             if (F_norm < CRITERION_CONV) break;
             dX = dF_obj.inverse() * F_obj;
             stress_incr_rate -= dX;
@@ -182,9 +179,9 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
             }
             stress_in_iter = stress_3d + tensor_trans_order(stress_incr_rate) * *dtime;
             vel_grad_plas = get_vel_grad_plas(stress_in_iter, orientation, statev, temperature);
-            strech_plas = 0.5 * (vel_grad_plas + vel_grad_plas.transpose());
+            stretch_plas = 0.5 * (vel_grad_plas + vel_grad_plas.transpose());
             spin_plas = 0.5 * (vel_grad_plas - vel_grad_plas.transpose());
-            dp_term = C_pri * strain_modi_tensor * tensor_trans_order(strech_plas);
+            dp_term = C_pri * strain_modi_tensor * tensor_trans_order(stretch_plas);
             wp_term = Sigma_Jaumann * tensor_trans_order_spin(spin_plas);
             F_obj = stress_incr_rate + dp_term + wp_term - unchange_term;
 
@@ -193,23 +190,17 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
             dF_obj = Matrix6d::Identity() + C_pri * strain_modi_tensor * ddp_by_dsigma + Sigma_Jaumann * dwp_by_dsigma;
 
             current_F_norm = F_obj.norm();
+
+            if (*kstep==2 && *kinc < 5 && *noel == 2000 && *npt == 1){
+                cout << "NCycle:" << ncycle << " DH_iter: " << downhill_iter << endl;
+                debug_info(kstep, kinc, stretch, spin, stress_3d, stress_incr_rate, statev, total_mode_num);
+            }
+
             if (std::isnan(current_F_norm)) {
-                if (*noel == 2000 && *npt == 1){
-                    cout << "NAN detected in the iteration process." << endl;
-                    cout << "KSTEP: " << *kstep << " KINC: " << *kinc << endl;
-                    cout << "Strecth: " << strech << endl;
-                    cout << "Spin: " << spin << endl;
-                    cout << "Stress: " << stress_3d << endl;
-                    cout << "Stress_incr_rate: " << stress_incr_rate << endl;
-                    for (int pmode_id = 0; pmode_id < total_mode_num; pmode_id++){
-                        int statev_id = sdv_ind(pmode_id, "SSR");
-                        cout << "Mode " << pmode_id << " SSR: " << statev[statev_id] << endl;
-                    }
-                }
                 umat_state = 1;
-                stress_incr_rate = elastic_modulus * strain_modi_tensor * tensor_trans_order(strech);
+                stress_incr_rate = elastic_modulus * strain_modi_tensor * tensor_trans_order(stretch);
                 vel_grad_plas = Matrix3d::Zero();
-                strech_plas = Matrix3d::Zero();
+                stretch_plas = Matrix3d::Zero();
                 ddp_by_dsigma = Matrix6d::Zero();
                 break;
             }
@@ -238,7 +229,7 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
 
     // Update the state variables
     /* cout << "pe_frac: " << calc_equivalent_value(strain_rate_plas)/calc_equivalent_value(strain_rate) << endl; */
-    plastic_strain += strech_plas * *dtime;
+    plastic_strain += stretch_plas * *dtime;
     Matrix3d elastic_strain = tensor_trans_order(strain) - plastic_strain;
     spin_plas = 0.5 * (vel_grad_plas - vel_grad_plas.transpose());
     spin_elas = spin - spin_plas;
@@ -247,7 +238,7 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     statev[0] = new_euler(0); statev[1] = new_euler(1); statev[2] = new_euler(2);
     Matrix3d stress_grain = tensor_rot_to_CryCoord(stress_in_iter, orientation);
     for (int pmode_id = 0; pmode_id < total_mode_num; pmode_id++){
-        mode_sys[pmode_id]->update_ssd(strech, stress_grain, statev, *dtime, temperature);
+        mode_sys[pmode_id]->update_ssd(stretch, stress_grain, statev, *dtime, temperature);
     }
     /* for (int pmode_id = 0; pmode_id < total_mode_num; pmode_id++){ */
     /*     mode_sys[pmode_id]->update_rho_hard(statev, *dtime, *temp); */
@@ -268,7 +259,7 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     statev[13] = 0.0;//dtemp
     //
     // Calculate DDSDDE
-    Matrix6d d_deps_plas_d_deps = cal_ddEp_ddE(strech_plas, dstrain_, dtime);
+    Matrix6d d_deps_plas_d_deps = cal_ddEp_ddE(stretch_plas, dstrain_, dtime);
     Matrix3x6d d_wpdt_plas_d_deps = cal_dWdt_ddE(spin_plas, dstrain_, dtime);
     Matrix3x6d d_wdt_d_deps = cal_dWdt_ddE(spin, dstrain_, dtime);
     Matrix6d Jacobian = (Matrix6d::Identity() + C_pri * strain_modi_tensor * ddp_by_dsigma * *dtime + Sigma_Jaumann * dwp_by_dsigma * *dtime).inverse() *

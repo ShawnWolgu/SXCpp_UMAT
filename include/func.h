@@ -348,6 +348,13 @@ inline double calc_equivalent_value(Matrix3d mat){
     return sqrt(2./3. * sum);
 }
 
+inline double calc_equivalent_value(Vector6d vec){
+    Matrix3d mat = tensor_trans_order(vec);
+    Matrix3d dev_mat = mat - Matrix3d::Identity() * mat.trace();
+    double sum = (dev_mat.cwiseProduct(dev_mat)).sum();
+    return sqrt(2./3. * sum);
+}
+
 inline double calc_first_principal(Matrix3d mat){
     Vector3d eigens = mat.eigenvalues().cwiseAbs();
     return eigens.maxCoeff();

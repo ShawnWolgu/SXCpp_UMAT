@@ -119,10 +119,16 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     Matrix3d spin_elas = spin - spin_plas;
     Matrix3d stretch_plas = Matrix3d::Zero();
 
+    Vector6d pe_vec{{statev[6], statev[7], statev[8], statev[9], statev[10], statev[11]}};
+    double pe_eqv = calc_equivalent_value(pe_vec);
+
     //iteration: Newton-Raphson method
     int iteration_num = 0;
     double step_scale = 1.0, F_norm = 1000.0;
-    Vector6d stress_incr_rate = elastic_modulus * strain_modi_tensor * tensor_trans_order(stretch);
+    Vector6d stress_incr_rate = Vector6d::Zero();
+    if (pe_eqv < 1e-20){
+        elastic_modulus * strain_modi_tensor * tensor_trans_order(stretch);
+    }
     Matrix3d stress_3d = tensor_trans_order(stress_);
     Matrix6d ddp_by_dsigma = Matrix6d::Zero();
     Matrix3x6d dwp_by_dsigma = Matrix3x6d::Zero();
@@ -251,7 +257,7 @@ extern "C" void umat(double* stress, double* statev, double* ddsdde, double* sse
     for (int i = 0; i < 6; i++){
         stress[i] = sigma_out(i);
     }
-    Vector6d pe_vec = tensor_trans_order(plastic_strain);
+    pe_vec = tensor_trans_order(plastic_strain);
     statev[6] = pe_vec(0); statev[7] = pe_vec(1); statev[8] = pe_vec(2);
     statev[9] = pe_vec(3); statev[10] = pe_vec(4); statev[11] = pe_vec(5);
     equiv_plas_strain = calc_equivalent_value(plastic_strain);
